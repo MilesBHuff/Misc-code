@@ -5,9 +5,9 @@ About
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 | A repository containing a number of scripts and things I've written over the
   years.  The code in this repository is generally too small to warrant its own
-  repo.  A lot of it ends up in ``~/.local/``;  that which doesn't, is denoted
-  as such.
-| Code which is better classified as a "Dotfile" belongs in the Dotfiles
+  repo.  A lot of it ends up in ``~/.local/``;  that which doesn't, is in
+  special subfolders under ``./bin``.
+| Code which is better classified as a "dotfile" belongs in the Dotfiles
   repository.
 
 License
