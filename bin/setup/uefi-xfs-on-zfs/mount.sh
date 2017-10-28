@@ -1,6 +1,8 @@
-#!/bin/sh
-## A script to allow for mounting partitions from a flashdrive.  
-## Computer-specific.  
+#!/usr/bin/env sh
+## Copyright © by Miles Bradley Huff from 2016 per the LGPL3 (the Third Lesser GNU Public License)
+
+## A script to allow for mounting partitions from a flashdrive.
+## Computer-specific.
 
 ## Notify the user
 # echo ":: Mounting partitions..."

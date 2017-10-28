@@ -1,4 +1,6 @@
-#!/bin/sh
+#!/usr/bin/env sh
+## Copyright © by Miles Bradley Huff from 2016 per the LGPL3 (the Third Lesser GNU Public License)
+
 ## Notify the user
 echo "Attempting to umount partitions...  "
 
