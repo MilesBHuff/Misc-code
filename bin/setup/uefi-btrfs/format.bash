@@ -2,19 +2,22 @@
 ## Copyright © by Miles Bradley Huff from 2016 per the LGPL3 (the Third Lesser GNU Public License)
 
 ## Get disk
-if [[ ! $1 ]]; then
-	echo 'Disk: '
-	read DISK
-else DISK="$1"
-fi
-[[ ! -e "$DISK" ]] && echo 'Invalid disk.' && exit 1
+while [ true ]; do
+	if [[ ! $1 ]]; then
+		echo 'Disk: '
+		read DISK
+	else DISK="$1"
+	fi
+	[[ -e "$DISK" ]] && break
+	echo ':: Invalid disk.'
+done
 
 ## Get system stats
 echo
-echo 'Gathering statistics...'
+echo ':: Gathering information...'
 make
 PAGESIZE="$(./getPageSize)"
-MEMSIZE='4096M'
+MEMSIZE='2048M'
 NPROC="$(nproc)"
 make clean
 
@@ -27,7 +30,7 @@ MOUNT_VFAT_OPTS='check=relaxed,errors=remount-ro,iocharset=utf8,tz=UTC,rodir,sys
 
 ## Partition disk
 echo
-echo 'Partitioning disk...'
+echo ':: Partitioning disk...'
 echo "
 o
 Y
@@ -56,14 +59,14 @@ Y
 " | gdisk "$DISK"
 sleep 1
 echo
-echo 'Refreshing devices...'
+echo ':: Refreshing devices...'
 partprobe
 
 ## Format partitions
 sleep 1
 echo
-echo 'Formatting partitions...'
-#mkfs.vfat  $MKFS_VFAT_OPTS   -n     'BOOT' "${DISK}1"
+echo ':: Formatting partitions...'
+mkfs.vfat  $MKFS_VFAT_OPTS   -n     'BOOT' "${DISK}1"
 mkswap --pagesize $PAGESIZE --label 'SWAP' "${DISK}2"
 mkfs.btrfs $MKFS_BTRFS_OPTS --label 'ROOT' "${DISK}3"
 mkfs.btrfs $MKFS_BTRFS_OPTS --label 'HOME' "${DISK}4"
@@ -71,13 +74,13 @@ mkfs.btrfs $MKFS_BTRFS_OPTS --label 'HOME' "${DISK}4"
 ## Mount
 sleep 1
 echo
-echo 'Mounting partitions...'
+echo ':: Mounting partitions...'
 MOUNTPOINT='/media/format-drives-test'
 swapon "${DISK}2"
 mkdir  "$MOUNTPOINT"
 mount  -o "$MOUNT_ANY_OPTS"','"$MOUNT_BTRFS_OPTS" "${DISK}3" "$MOUNTPOINT"
-#mkdir  "$MOUNTPOINT"'/boot'
-#mount  -o "$MOUNT_ANY_OPTS"','"$MOUNT_VFAT_OPTS"  "${DISK}1" "$MOUNTPOINT"'/boot'
+mkdir  "$MOUNTPOINT"'/boot'
+mount  -o "$MOUNT_ANY_OPTS"','"$MOUNT_VFAT_OPTS"  "${DISK}1" "$MOUNTPOINT"'/boot'
 mkdir  "$MOUNTPOINT"'/home'
 mount  -o "$MOUNT_ANY_OPTS"','"$MOUNT_BTRFS_OPTS" "${DISK}4" "$MOUNTPOINT"'/home'
 
@@ -86,18 +89,17 @@ sleep 1
 echo
 lsblk
 echo
-echo 'Giving partitions time to adjust...'
+echo ':: Giving partitions time to adjust...'
 sleep 10
 
 ## Unmount
 sleep 1
 echo
-echo 'Unmounting partitions...'
-#TODO
+echo ':: Unmounting partitions...'
 umount  "${DISK}4"
 rmdir   "$MOUNTPOINT"'/home'
-#umount  "${DISK}1"
-#rmdir   "$MOUNTPOINT"'/boot'
+umount  "${DISK}1"
+rmdir   "$MOUNTPOINT"'/boot'
 umount  "${DISK}3"
 rmdir   "$MOUNTPOINT"
 swapoff "${DISK}2"

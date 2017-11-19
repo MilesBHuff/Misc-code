@@ -2,16 +2,19 @@
 ## Copyright © by Miles Bradley Huff from 2016 per the LGPL3 (the Third Lesser GNU Public License)
 
 ## Get disk
-if [[ ! $1 ]]; then
-	echo 'Disk: '
-	read DISK
-else DISK="$1"
-fi
-[[ ! -e "$DISK" ]] && echo 'Invalid disk.' && exit 1
+while [ true ]; do
+	if [[ ! $1 ]]; then
+		echo 'Disk: '
+		read DISK
+	else DISK="$1"
+	fi
+	[[ ! -e "$DISK" ]] && break
+	echo 'Invalid disk.'
+done
 
 ## Get system stats
 echo
-echo 'Gathering statistics...'
+echo ':: Gathering statistics...'
 NPROC="$(nproc)"
 
 ## Declare variables
@@ -21,7 +24,7 @@ MOUNT_VFAT_OPTS='check=relaxed,errors=remount-ro,iocharset=utf8,tz=UTC,rodir,sys
 
 ## Mount
 echo
-echo 'Mounting partitions...'
+echo ':: Mounting partitions...'
 MOUNTPOINT='/mnt'
 swapon "${DISK}2"
 mkdir  "$MOUNTPOINT"
