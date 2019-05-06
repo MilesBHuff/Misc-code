@@ -10,7 +10,7 @@ while [[ true ]]; do
 	else DISK="$1"
 	fi
 	[[ -e "$DISK" ]] && break
-	echo ':: Invalid disk.'
+	echo ':: Invalid disk.' >&2
 done
 
 ## Get system info
