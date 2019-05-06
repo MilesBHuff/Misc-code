@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-## Copyright © by Miles Bradley Huff from 2016 per the LGPL3 (the Third Lesser GNU Public License)
+## Copyright © by Miles Bradley Huff from 2016-2019 per the LGPL3 (the Third Lesser GNU Public License)
 
 ## Get disk
 ## ---------------------------------------------------------------------
-while [ true ]; do
+while [[ true ]]; do
 	if [[ ! $1 ]]; then
 		echo 'Disk: '
 		read DISK
 	else DISK="$1"
 	fi
-	[[ ! -e "$DISK" ]] && break
-	echo 'Invalid disk.'
+	[[ -e "$DISK" ]] && break
+	echo ':: Invalid disk.' >&2
 done
 
 ## Get system info
