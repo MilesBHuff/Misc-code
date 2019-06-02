@@ -1,1 +1,0 @@
-../../../src/getPageSize/getPageSize.cpp
