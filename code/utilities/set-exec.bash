@@ -3,7 +3,7 @@
 ## Sets the executable bit on all files with matching extensions at or below this directory
 find . -type f |\
 while read F; do
-	if [[ -z $(echo "$F" | sed 's/^.*\.\(?:bash\|exe\|msi\|ps1\|py\|sh\)$//') ]]; then
+	if [[ -z $(echo "$F" | sed 's/^.*\.\(?:ba\(?:sh\|t\)\|exe\|msi\|p\(?:s1\|y\)\|sh\)$//') ]]; then
 		echo "$F"
 	fi
 done |\
