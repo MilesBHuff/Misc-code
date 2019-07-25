@@ -33,12 +33,6 @@ BLOCKSIZE="$(($PAGESIZE*256))" ## 1M with a 4k pagesize.  Idk if this should be 
 ## ---------------------------------------------------------------------
 MKFS_BTRFS_OPTS=" --force --data single --metadata single --nodesize $PAGESIZE --sectorsize $PAGESIZE --features extref,skinny-metadata,no-holes "
 MKFS_VFAT_OPTS=" -F 32 -b 6 -f 1 -h 6 -r 512 -R 12 -s 1 -S $PAGESIZE "
-## SSD tweaks
-if [[ SSD -gt 0 ]]; then
-    MOUNT_BTRFS_OPTS="${MOUNT_BTRFS_OPTS},noautodefrag,discard,ssd_spread"
-else
-    MOUNT_BTRFS_OPTS="${MOUNT_BTRFS_OPTS},autodefrag,nodiscard,nossd"
-fi
 
 ## Mount options
 ## ---------------------------------------------------------------------
@@ -46,6 +40,12 @@ MOUNTPOINT='/mnt'
 MOUNT_ANY_OPTS='defaults,async,auto,iversion,relatime,strictatime,lazytime,rw' #mand## Mount options
 MOUNT_BTRFS_OPTS="acl,noinode_cache,space_cache=v2,barrier,noflushoncommit,treelog,usebackuproot,datacow,datasum,compress=zstd,fatal_errors=bug,noenospc_debug,thread_pool=$NPROC,max_inline=$(echo $PAGESIZE*0.95 | bc | sed 's/\..*//')" #logreplay
 MOUNT_VFAT_OPTS='check=relaxed,errors=remount-ro,tz=UTC,rodir,sys_immutable,flush' #iocharset=utf8
+## SSD tweaks
+if [[ SSD -gt 0 ]]; then
+    MOUNT_BTRFS_OPTS="${MOUNT_BTRFS_OPTS},noautodefrag,discard,ssd_spread"
+else
+    MOUNT_BTRFS_OPTS="${MOUNT_BTRFS_OPTS},autodefrag,nodiscard,nossd"
+fi
 echo
 
 ## Mount system
