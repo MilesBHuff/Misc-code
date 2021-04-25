@@ -6,13 +6,13 @@
 
 ## Get the disks
 ## ---------------------------------------------------------------------
-declare -a DISKS="$@"
+declare -a DISKS=("$@")
 declare -i I=0
 while [[ true ]]; do
 	if [[ $I -ge 2 ]]; then
-		echo 'Add more disks? (y/N) '
+		echo -n 'Add more disks? (y/N) '
 		read ANSWER
-		[[ !  $ANSWER -eq 'y' && ! $ANSWER -eq 'Y' ]] && break;
+		[[ "$ANSWER" != 'y' && "$ANSWER" != 'Y' ]] && break;
 	fi
 
 	while [[ true ]]; do
@@ -26,24 +26,27 @@ while [[ true ]]; do
 			break
 		else
 			echo ":: Invalid disk: '${DISKS[$I]}'." >&2
-			DISKS[$I]=''
+			DISKS[$I]=
 		fi
 	done
 done
 echo
-
-exit
 set -e ## Fail the whole script if any command within it fails.
 
 ## System information
 ## ---------------------------------------------------------------------
 echo ':: Gathering information...'
-NPROC="$(nproc)"
-SSD="$(cat /sys/block/$(echo $DISK | sed 's/\/dev\///')/queue/rotational)"
+declare -a TYPES=()
+declare -i J=0
+while [[ $J -lt $I ]]; do
+	TYPES[$J]=$(cat /sys/block/$(echo "${DISKS[$J]}" | sed 's/\/dev\///')/queue/rotational)
+	let 'J++'
+done
 BOOTSIZE="500M" ## 500MB/477MiB is the recommended size for the EFI partition when used as /boot (https://www.freedesktop.org/wiki/Specifications/BootLoaderSpec)
 MEMSIZE="$(free -b | grep 'Mem:' | sed 's/Mem:\s*//' | sed 's/\s.*//' )"
 PAGESIZE="$(getconf PAGESIZE)"
 BLOCKSIZE="$(($PAGESIZE*256))" ## 1M with a 4k pagesize.  Idk if this should be dependent on pagesize.
+NPROC="$(nproc)"
 
 ## Formatting settings
 ## ---------------------------------------------------------------------
@@ -53,16 +56,15 @@ MKFS_VFAT_OPTS=" -F 32 -b 6 -f 1 -h 6 -r 512 -R 12 -s 1 -S $PAGESIZE "
 ## Mount options
 ## ---------------------------------------------------------------------
 MOUNTPOINT='/media/format-drives-test'
-MOUNT_ANY_OPTS='defaults,rw,async,iversion,nodiratime,relatime,strictatime,lazytime,auto' #mand## Mount options
-MOUNT_BTRFS_OPTS="acl,noinode_cache,space_cache=v2,barrier,noflushoncommit,treelog,usebackuproot,datacow,datasum,compress=zstd,fatal_errors=bug,noenospc_debug,thread_pool=$NPROC,max_inline=$(echo $PAGESIZE*0.95 | bc | sed 's/\..*//')" #logreplay
+MOUNT_ANY_OPTS='defaults,rw,async,iversion,nodiratime,relatime,strictatime,lazytime,auto' #mand
 MOUNT_VFAT_OPTS='check=relaxed,errors=remount-ro,tz=UTC,rodir,sys_immutable,flush' #iocharset=utf8
-## SSD tweaks
-if [[ SSD -gt 0 ]]; then
-    MOUNT_BTRFS_OPTS="${MOUNT_BTRFS_OPTS},noautodefrag,discard,ssd_spread"
-else
-    MOUNT_BTRFS_OPTS="${MOUNT_BTRFS_OPTS},autodefrag,nodiscard,nossd"
-fi
+MOUNT_BTRFS_OPTS="acl,noinode_cache,space_cache=v2,barrier,noflushoncommit,treelog,usebackuproot,datacow,datasum,compress=zstd,fatal_errors=bug,noenospc_debug,thread_pool=$NPROC,max_inline=$(echo $PAGESIZE*0.95 | bc | sed 's/\..*//')" #logreplay
+MOUNT_BTRFS_OPTS_SSD="${MOUNT_BTRFS_OPTS},noautodefrag,discard,ssd_spread"
+MOUNT_BTRFS_OPTS_HDD="${MOUNT_BTRFS_OPTS},autodefrag,nodiscard,nossd"
+unset MOUNT_BTRFS_OPTS
 echo
+
+exit
 
 ## Prepare system
 ## =====================================================================
