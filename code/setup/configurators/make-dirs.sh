@@ -3,7 +3,7 @@
 
 ## Aliases
 alias  md='mkdir -p'
-alias smd='sudo md'
+alias smd='sudo mkdir -p'
 
 ## Caches
  md ~/.compose-cache
