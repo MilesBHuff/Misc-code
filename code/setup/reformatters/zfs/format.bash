@@ -22,7 +22,7 @@ while [[ true ]]; do
 		fi
 
 		if [[ -e "${DISKS[$I]}" ]]; then
-			let 'I++'
+			let '++I'
 			break
 		else
 			echo ":: Invalid disk: '${DISKS[$I]}'." >&2
@@ -31,16 +31,16 @@ while [[ true ]]; do
 	done
 done
 echo
-set -e ## Fail the whole script if any command within it fails.
 
 ## System information
 ## ---------------------------------------------------------------------
+set -e ## Fail the whole script if any command within it fails.
 echo ':: Gathering information...'
 declare -a TYPES=()
 declare -i J=0
 while [[ $J -lt $I ]]; do
 	TYPES[$J]=$(cat /sys/block/$(echo "${DISKS[$J]}" | sed 's/\/dev\///')/queue/rotational)
-	let 'J++'
+	let '++J'
 done
 BOOTSIZE="500M" ## 500MB/477MiB is the recommended size for the EFI partition when used as /boot (https://www.freedesktop.org/wiki/Specifications/BootLoaderSpec)
 MEMSIZE="$(free -b | grep 'Mem:' | sed 's/Mem:\s*//' | sed 's/\s.*//' )"
@@ -64,21 +64,22 @@ MOUNT_BTRFS_OPTS_HDD="${MOUNT_BTRFS_OPTS},autodefrag,nodiscard,nossd"
 unset MOUNT_BTRFS_OPTS
 echo
 
-exit
-
 ## Prepare system
 ## =====================================================================
 
 ## Unmount disk
 ## ---------------------------------------------------------------------
-echo ':: Making sure disk is not mounted...'
+echo ':: Making sure the disks are not mounted...'
 set +e ## It's okay if this section fails
-swapoff "$MOUNTPOINT/swapfile"
-for EACH in "$DISK"*; do
-	umount "$EACH"
+for DISK in ${DISKS[@]}; do
+	for EACH in "$DISK"*; do
+		umount  "$EACH"
+		swapoff "$EACH"
+	done
 done
 set -e ## Back to failing the script like before
 echo
+exit
 
 ## Reformat the disk
 ## =====================================================================
