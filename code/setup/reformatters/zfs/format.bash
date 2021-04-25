@@ -1,22 +1,39 @@
 #!/usr/bin/env bash
-## Copyright © by Miles Bradley Huff from 2016-2019 per the LGPL3 (the Third Lesser GNU Public License)
-set -e ## Fail the whole script if any command within it fails.
+## Copyright © by Miles Bradley Huff from 2016-2021 the LGPL3 (the Third Lesser GNU Public License)
 
 ## Get system info and declare variables
 ## =====================================================================
 
-## Get the disk
+## Get the disks
 ## ---------------------------------------------------------------------
+declare -a DISKS="$@"
+declare -i I=0
 while [[ true ]]; do
-	if [[ ! $1 ]]; then
-		echo ':: Path to disk: '
-		read DISK
-	else DISK="$1"
+	if [[ $I -ge 2 ]]; then
+		echo 'Add more disks? (y/N) '
+		read ANSWER
+		[[ !  $ANSWER -eq 'y' && ! $ANSWER -eq 'Y' ]] && break;
 	fi
-	[[ -e "$DISK" ]] && break
-	echo ':: Invalid disk.' >&2
+
+	while [[ true ]]; do
+		if [[ -z "${DISKS[$I]}" ]]; then
+			echo ":: Path to disk #$I: "
+			read DISKS[$I]
+		fi
+
+		if [[ -e "${DISKS[$I]}" ]]; then
+			let 'I++'
+			break
+		else
+			echo ":: Invalid disk: '${DISKS[$I]}'." >&2
+			DISKS[$I]=''
+		fi
+	done
 done
 echo
+
+exit
+set -e ## Fail the whole script if any command within it fails.
 
 ## System information
 ## ---------------------------------------------------------------------
