@@ -16,14 +16,14 @@ while [[ true ]]; do
 
 	while [[ true ]]; do
 		if [[ -z "${DISKS[$I]}" ]]; then
-			read -p ":: Path to disk #$I: " DISKS[$I]
+			read -p "Path to disk #$I: " DISKS[$I]
 		fi
 
 		if [[ -e "${DISKS[$I]}" ]]; then
 			let '++I'
 			break
 		else
-			echo ":: Invalid disk: '${DISKS[$I]}'." >&2
+			echo "Invalid disk: '${DISKS[$I]}'." >&2
 			DISKS[$I]=
 		fi
 	done
@@ -60,21 +60,22 @@ declare -i ROOTSIZE=$(($SMALLEST_DISK_SIZE-$SWAPSIZE-$BOOTSIZE))
 
 ## Figure out which drives are SSDs and which are HDDS, so we can use the right mount options.
 ## ---------------------------------------------------------------------
-declare -a TYPES=()
-declare -i J=0
-while [[ $J -lt $DISK_COUNT ]]; do
-	TYPES[$J]=$(cat /sys/block/$(echo "${DISKS[$J]}" | sed 's/\/dev\///')/queue/rotational)
-	let '++J'
+declare -a DISK_TYPES=()
+declare -i I=0
+while [[ $I -lt $DISK_COUNT ]]; do
+	DISK_TYPES[$I]=$(cat /sys/block/$(echo "${DISKS[$I]}" | sed 's/\/dev\///')/queue/rotational)
+	let '++I'
 done
+unset I
 
 ## Unset unneeded variables
 ## ---------------------------------------------------------------------
-unset J SMALLEST_DISK_SIZE MEMSIZE SWAPSIZE
+unset SMALLEST_DISK_SIZE MEMSIZE SWAPSIZE
 
 ## Formatting settings
 ## ---------------------------------------------------------------------
 MKFS_BTRFS_OPTS=" --force --data single --metadata single --nodesize $PAGESIZE --sectorsize $PAGESIZE --features extref,skinny-metadata,no-holes "
-MKFS_VFAT_OPTS=" -F 32 -b 6 -f 1 -h 6 -r 512 -R 12 -s 1 -S $PAGESIZE "
+MKFS_VFAT_OPTS=" -F 32 -b 6 -f 1 -h 6 -R 12 -s 1 -S $PAGESIZE " # -r 512
 
 ## Mount options
 ## ---------------------------------------------------------------------
@@ -109,8 +110,8 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 
 	## Partition disks
 	## ---------------------------------------------------------------------
-	for DISK in ${DISKS[@]}; do
-		echo "Partitioning '${DISK}'"
+	for DISK in "${DISKS[@]}"; do
+		echo "Partitioning '${DISK}'..."
 		(	echo 'o'          ## Create a new GPT partition table
 			echo 'Y'          ## Confirm
 
@@ -142,34 +143,37 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 
 			echo 'w'          ## Write the changes to disk
 			echo 'Y'          ## Confirm
-		) | gdisk "$DISK" > /dev/null
+		) | gdisk "$DISK" 1>/dev/null
 	done
 	sleep 1
 
 	## Refresh disks
 	## ---------------------------------------------------------------------
-	echo ':: Refreshing devices...'
+	echo 'Refreshing devices...'
 	set +e ## It's okay if this section fails
 	partprobe
 	sleep 1
 	set -e ## Back to failing the script like before
 
-## Figure out the partition prefix
-## ---------------------------------------------------------------------
+	## Figure out the partition prefix
+	## ---------------------------------------------------------------------
+	declare -i I=0
+	while [[ $I -lt $DISK_COUNT ]]; do
+		[[ ! -e "${DISKS[$I]}1" ]] && PART='p'
+		[[ ! -e "${DISKS[$I]}${PART}1" ]] && echo "Couldn't find partition!" >&2 && exit 1
+
+		## Format partitions
+		## ---------------------------------------------------------------------
+		echo "Formatting disk '${DISKS[$I]}'..."
+		mkfs.vfat  $MKFS_VFAT_OPTS   -n     'BOOT' "${DISKS[$I]}${PART}1" 1>/dev/null
+		mkfs.btrfs $MKFS_BTRFS_OPTS --label 'ROOT' "${DISKS[$I]}${PART}2" 1>/dev/null
+		mkswap -p "$PAGESIZE"        -L     'SWAP' "${DISKS[$I]}${PART}3" 1>/dev/null
+		let '++I'
+	done
+	unset MKFS_VFAT_OPTS MKFS_BTRFS_OPTS
+	sleep 1
 fi
 exit
-[[ ! -f "${DISK}1" ]] && PART='p'
-if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
-
-	## Format partitions
-	## ---------------------------------------------------------------------
-	echo ':: Formatting partitions...'
-	mkfs.vfat  $MKFS_VFAT_OPTS   -n     'BOOT' "${DISK}${PART}1"
-	mkfs.btrfs $MKFS_BTRFS_OPTS --label 'ROOT' "${DISK}${PART}2"
-	sleep 1
-	echo
-
-fi
 
 ## Prepare for Linux
 ## =====================================================================
