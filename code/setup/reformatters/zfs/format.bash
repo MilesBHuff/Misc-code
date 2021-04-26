@@ -55,9 +55,9 @@ done
 
 ## Partition sizes
 ## ---------------------------------------------------------------------
+declare -i BOOTSIZE=$((500*1024*1024)) ## 500MB/477MiB is the recommended size for the EFI partition when used as /boot (https://www.freedesktop.org/wiki/Specifications/BootLoaderSpec)
 declare -i SWAPSIZE=$(($MEMSIZE/$DISK_COUNT)) ## We need at least as much swap as memory if we want to hibernate.
-declare -i ROOTSIZE=$(($SMALLEST_DISK_SIZE-$SWAPSIZE))
-BOOTSIZE='500M' ## 500MB/477MiB is the recommended size for the EFI partition when used as /boot (https://www.freedesktop.org/wiki/Specifications/BootLoaderSpec)
+declare -i ROOTSIZE=$(($SMALLEST_DISK_SIZE-$SWAPSIZE-$BOOTSIZE))
 
 ## Figure out which drives are SSDs and which are HDDS, so we can use the right mount options.
 ## ---------------------------------------------------------------------
@@ -70,7 +70,7 @@ done
 
 ## Unset unneeded variables
 ## ---------------------------------------------------------------------
-unset J SMALLEST_DISK_SIZE MEMSIZE
+unset J SMALLEST_DISK_SIZE MEMSIZE SWAPSIZE
 
 ## Formatting settings
 ## ---------------------------------------------------------------------
@@ -98,8 +98,8 @@ echo ':: Making sure the disks are not mounted...'
 set +e ## It's okay if this section fails
 for DISK in ${DISKS[@]}; do
 	for EACH in "$DISK"*; do
-		umount  "$EACH"
-		swapoff "$EACH"
+		umount  "$EACH" 2>/dev/null
+		swapoff "$EACH" 2>/dev/null
 	done
 done
 set -e ## Back to failing the script like before
@@ -118,18 +118,17 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 			echo 'Y'          ## Confirm
 
 			echo 'n'          ## Create a new partition
-			echo '1'          ## Choose the partition number
+			echo ''           ## Use the default partition number (1)
 			echo ''           ## Choose the default start location (2048)
-			echo "+$BOOTSIZE" ## Make it as large as $BOOTSIZE
+			echo "+$(($BOOTSIZE/1024/1024))M" ## Make it as large as $BOOTSIZE
 			echo 'ef00'       ## Declare it to be a UEFI partition
 			echo 'c'          ## Change a partition's name
-			echo '1'          ## The partition whose name to change
 			echo 'BOOT'       ## The name of the partition
 
 			echo 'n'          ## Create a new partition
 			echo '2'          ## Choose the partition number
 			echo ''           ## Choose the default start location (where the last partition ended)
-			echo "+$ROOTSIZE" ## Make it as large as $ROOTSIZE
+			echo "+$(($ROOTSIZE/1024/1024/1024))G" ## Make it as large as $ROOTSIZE
 			echo '8300'       ## Declare it to be a Linux x86-64 root partition
 			echo 'c'          ## Change a partition's name
 			echo '2'          ## The partition whose name to change
@@ -146,7 +145,7 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 
 			echo 'w'          ## Write the changes to disk
 			echo 'Y'          ## Confirm
-		) | gdisk "$DISK"
+		) | gdisk "$DISK" > /dev/null
 	done
 	sleep 1
 	echo
