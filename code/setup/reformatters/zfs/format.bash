@@ -103,9 +103,9 @@ for DISK in ${DISKS[@]}; do
 done
 set -e ## Back to failing the script like before
 
-## Reformat the disks
+## Repartition the disks
 ## =====================================================================
-read -p ':: Reformat the disks? (y/N) ' INPUT
+read -p ':: Partition the disks? (y/N) ' INPUT
 if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 
 	## Partition disks
@@ -155,19 +155,25 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 	sleep 1
 	set -e ## Back to failing the script like before
 
+fi
+## Reformat the disks
+## =====================================================================
+read -p ':: Format the disks? (y/N) ' INPUT
+if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
+
 	## Figure out the partition prefix
 	## ---------------------------------------------------------------------
 	declare -i I=0
-	while [[ $I -lt $DISK_COUNT ]]; do
-		[[ ! -e "${DISKS[$I]}1" ]] && PART='p'
-		[[ ! -e "${DISKS[$I]}${PART}1" ]] && echo "Couldn't find partition!" >&2 && exit 1
+	for DISK in "${DISKS[@]}"; do
+		[[ ! -e "${DISK}1" ]] && PART='p'
+		[[ ! -e "${DISK}${PART}1" ]] && echo "Couldn't find partition!" >&2 && exit 1
 
 		## Format partitions
 		## ---------------------------------------------------------------------
-		echo "Formatting disk '${DISKS[$I]}'..."
-		mkfs.vfat  $MKFS_VFAT_OPTS   -n     'BOOT' "${DISKS[$I]}${PART}1" 1>/dev/null
-		mkfs.btrfs $MKFS_BTRFS_OPTS --label 'ROOT' "${DISKS[$I]}${PART}2" 1>/dev/null
-		mkswap -p "$PAGESIZE"        -L     'SWAP' "${DISKS[$I]}${PART}3" 1>/dev/null
+		echo "Formatting disk '${DISK}'..."
+		mkfs.vfat  $MKFS_VFAT_OPTS   -n     'BOOT' "${DISK}${PART}1" 1>/dev/null
+		mkfs.btrfs $MKFS_BTRFS_OPTS --label 'ROOT' "${DISK}${PART}2" 1>/dev/null
+		mkswap -p "$PAGESIZE"        -L     'SWAP' "${DISK}${PART}3" 1>/dev/null
 		let '++I'
 	done
 	unset MKFS_VFAT_OPTS MKFS_BTRFS_OPTS
@@ -177,6 +183,14 @@ exit
 
 ## Prepare for Linux
 ## =====================================================================
+
+## Figure out whether we're using an SSD
+## ---------------------------------------------------------------------
+# if [[ "${DISK_TYPES[$I]}" = 0 ]]; then
+# 	MOUNT_BTRFS_OPTS="$MOUNT_BTRFS_OPTS_SSD"
+# else
+# 	MOUNT_BTRFS_OPTS="$MOUNT_BTRFS_OPTS_HDD"
+# fi
 
 ## First mounts (sanity check -- remember `set -e`?)
 ## ---------------------------------------------------------------------
