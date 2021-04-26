@@ -6,6 +6,7 @@
 
 ## Get the disks
 ## =====================================================================
+echo ':: Checking disks...'
 declare -a DISKS=("$@")
 declare -i I=0
 while [[ true ]]; do
@@ -69,6 +70,7 @@ while [[ $I -lt $DISK_COUNT ]]; do
 done
 unset I
 [[ ${DISKTYPES[0]} -eq 0 ]] && SSD=1 || SSD=0
+unset DISK_TYPES
 
 ## Unset unneeded variables
 ## ---------------------------------------------------------------------
@@ -76,20 +78,15 @@ unset SMALLEST_DISK_SIZE MEMSIZE SWAPSIZE
 
 ## Formatting settings
 ## ---------------------------------------------------------------------
-MKFS_BTRFS_OPTS=" --force --data single --metadata single --nodesize $PAGESIZE --sectorsize $PAGESIZE --features extref,skinny-metadata,no-holes "
 MKFS_VFAT_OPTS=" -F 32 -b 6 -f 1 -h 6 -R 12 -s 1 -S $PAGESIZE " # -r 512
+MKFS_ZFS_OPTS=""
 
 ## Mount options
 ## ---------------------------------------------------------------------
 MOUNTPOINT='/media/format-drives-test'
 MOUNT_ANY_OPTS='defaults,rw,async,iversion,nodiratime,relatime,strictatime,lazytime,auto' #mand
 MOUNT_VFAT_OPTS='check=relaxed,errors=remount-ro,tz=UTC,rodir,sys_immutable,flush' #iocharset=utf8
-MOUNT_BTRFS_OPTS="acl,noinode_cache,space_cache=v2,barrier,noflushoncommit,treelog,usebackuproot,datacow,datasum,compress=zstd,fatal_errors=bug,noenospc_debug,thread_pool=$NPROC,max_inline=$(echo $PAGESIZE*0.95 | bc | sed 's/\..*//')" #logreplay
-if [[ SSD ]]; then
-	MOUNT_BTRFS_OPTS="${MOUNT_BTRFS_OPTS},noautodefrag,discard,ssd_spread"
-else
-	MOUNT_BTRFS_OPTS="${MOUNT_BTRFS_OPTS},autodefrag,nodiscard,nossd"
-fi
+MOUNT_ZFS_OPTS=''
 
 ## Prepare system
 ## #####################################################################
@@ -159,28 +156,53 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 	set -e ## Back to failing the script like before
 
 fi
+## Figure out the partition labels for the drives
+## ---------------------------------------------------------------------
+declare -a PART_LABELS
+declare -i I=0
+while [[ $I -lt $DISK_COUNT ]]; do
+	PART_LABELS[$I]=''
+	[[ ! -e "${DISKS[$I]}1" ]] && PART_LABELS[$I]='p'
+	[[ ! -e "${DISKS[$I]}${PART_LABELS[$I]}1" ]] && echo "Couldn't find partition!" >&2 && exit 1
+	let '++I'
+done
+unset I
+
 ## Reformat the disks
 ## =====================================================================
 read -p ':: Format the disks? (y/N) ' INPUT
 if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 
-	## Figure out the partition prefix
+	## Format partitions
 	## ---------------------------------------------------------------------
 	declare -i I=0
-	for DISK in "${DISKS[@]}"; do
-		[[ ! -e "${DISK}1" ]] && PART='p'
-		[[ ! -e "${DISK}${PART}1" ]] && echo "Couldn't find partition!" >&2 && exit 1
-
-		## Format partitions
-		## ---------------------------------------------------------------------
+	while [[ $I -lt $DISK_COUNT ]]; do
 		echo "Formatting disk '${DISK}'..."
-		mkfs.vfat  $MKFS_VFAT_OPTS   -n     'BOOT' "${DISK}${PART}1" 1>/dev/null
-		mkfs.btrfs $MKFS_BTRFS_OPTS --label 'ROOT' "${DISK}${PART}2" 1>/dev/null
-		mkswap -p "$PAGESIZE"        -L     'SWAP' "${DISK}${PART}3" 1>/dev/null
+		mkfs.vfat  $MKFS_VFAT_OPTS -n 'BOOT' "${DISKS[$I]}${PART_LABELS[$I]}1" 1>/dev/null
+		mkswap -p "$PAGESIZE"      -L 'SWAP' "${DISKS[$I]}${PART_LABELS[$I]}3" 1>/dev/null
 		let '++I'
 	done
-	unset MKFS_VFAT_OPTS MKFS_BTRFS_OPTS
+	unset MKFS_VFAT_OPTS
+
+	## Create zpool
+	## ---------------------------------------------------------------------
+	echo "Creating RAID volume..."
+	declare -a POOL_PARTS
+	declare -i I=0
+	while [[ $I -lt $DISK_COUNT ]]; do
+		POOL_PARTS[$I]=${DISKS[$I]}${PART_LABELS[$I]}2
+		let '++I'
+	done
+	unset I
+	zpool create POOL -fm "/mnt" mirror "${POOL_PARTS[@]}"
 	sleep 1
+	umount "/mnt"
+	sleep 1
+
+	## Create datasets
+	## ---------------------------------------------------------------------
+	echo 'Creating datasets...'
+	#TODO
 fi
 
 ## Prepare for Linux
@@ -199,56 +221,6 @@ sleep 1
 mount -o "$MOUNT_ANY_OPTS,$MOUNT_BTRFS_OPTS" "${DISK}${PART}2" "$MOUNTPOINT"
 sleep 1
 echo
-
-## Create swapfile
-## ---------------------------------------------------------------------
-## Using a swapfile instead of a swap partition makes it a lot easier to resize in the future.
-## Placing the swapfile at the root of the btrfs tree and outside of a subvol also makes it very portable and excludes it from snapshots.
-## Linux v5+ required!
-## Root-level swapfiles are usually called "swapfile" in Linux distros, and we keep that convention here.
-## Creating the swapfile before anything else should give it a privileged position in spinning hard disks if they put their fastest sectors at the start of the disk.
-read -p ':: Create swapfile? (y/N) ' INPUT
-echo
-if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
-	echo ':: Creating swapfile...'
-	truncate -s '0' "$MOUNTPOINT/swapfile" ## We have to create a 0-length file so we can use chattr
-	chattr   +C     "$MOUNTPOINT/swapfile" ## We have to disable copy-on-write
-	chattr   -c     "$MOUNTPOINT/swapfile" ## We have to make sure compression isn't enabled for it
-	chmod     '600' "$MOUNTPOINT/swapfile" ## The swapfile should NOT be world-readable!
-	fallocate -l "$MEMSIZE" "$MOUNTPOINT/swapfile" #NOTE:  May not work on all systems
-	#dd if='/dev/zero' of="$MOUNTPOINT/swapfile" bs="$BLOCKSIZE" count="$(($MEMSIZE/$BLOCKSIZE))" status='progress' #TODO:  This may create a file that is a little smaller than $MEMSIZE, due to integer truncation.
-	mkswap -p "$PAGESIZE" -L 'SWAP' "$MOUNTPOINT/swapfile"
-	swapon "$MOUNTPOINT/swapfile"
-	sleep 1
-	echo
-fi
-
-## Create subvolumes
-## ---------------------------------------------------------------------
-## The idea with subvolumes is principally to ensure that
-## (1) as little information is snapshotted as possible, and
-## (2) different snapshots of different subvols should be able to work together.
-## Also, there's a (3), which is that I'm hesitant to use subsubvolumes, because since they're excluded from their parent subvol's snapshots, I'm not sure whether they would still exist if I were to replace their parent subvol with a snapshot.  I'd rather use a .subvolignore list or something.
-## Additionally, snapshots should be independent of any subvols, so that production subvols can easily be wholesale replaced by their snapshots.
-## In order to meet requirement #1, child subvols should be created for temporary data.
-## In order to meet requirement #2, directories like /etc and / should not be on different subvols.
-## Making /home into an independent subvol meets both requirements.
-## Also, I'm naming system root subvols after their distros, since that allows me to dual-boot from within the same partition.
-read -p ':: Create subvolumes? (y/N) ' INPUT
-echo
-if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
-	echo ':: Creating subvolumes...'
-	mkdir -p "$MOUNTPOINT/snapshots"       \
-	         "$MOUNTPOINT/snapshots/@arch" \
-	         "$MOUNTPOINT/snapshots/@home" \
-	         "$MOUNTPOINT/snapshots/@srv"
-	btrfs subvolume create      "$MOUNTPOINT/@arch"
-	btrfs subvolume create      "$MOUNTPOINT/@home"
-	btrfs subvolume create      "$MOUNTPOINT/@srv"
-	btrfs subvolume set-default "$MOUNTPOINT/@arch"
-	sleep 1
-	echo
-fi
 
 ## Unmount everything
 ## ---------------------------------------------------------------------
