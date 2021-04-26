@@ -207,30 +207,33 @@ fi
 
 ## Prepare for Linux
 ## =====================================================================
-exit
+#TODO
+read -p ':: Mount and prep? (y/N) ' INPUT
+if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 
-## First mounts (sanity check -- remember `set -e`?)
-## ---------------------------------------------------------------------
-echo ':: Mounting partitions...'
-mkdir -p "$MOUNTPOINT"
-## BOOT (only temporarily mounted)
-mount -o "$MOUNT_ANY_OPTS,$MOUNT_VFAT_OPTS"  "${DISK}${PART}1" "$MOUNTPOINT"
-umount   "$MOUNTPOINT"
-sleep 1
-## ROOT (stays mounted)
-mount -o "$MOUNT_ANY_OPTS,$MOUNT_BTRFS_OPTS" "${DISK}${PART}2" "$MOUNTPOINT"
-sleep 1
-echo
+	## First mounts (sanity check -- remember `set -e`?)
+	## ---------------------------------------------------------------------
+	echo 'Mounting partitions...'
+	mkdir -p "$MOUNTPOINT"
+	## BOOT (only temporarily mounted)
+	mount -o "$MOUNT_ANY_OPTS,$MOUNT_VFAT_OPTS"  "${DISK}${PART}1" "$MOUNTPOINT"
+	umount   "$MOUNTPOINT"
+	sleep 1
+	## ROOT (stays mounted)
+	mount -o "$MOUNT_ANY_OPTS,$MOUNT_BTRFS_OPTS" "${DISK}${PART}2" "$MOUNTPOINT"
+	sleep 1
+	echo
 
-## Unmount everything
-## ---------------------------------------------------------------------
-echo ':: Unmounting partitions...'
-set +e ## It's okay if this section fails
-swapoff "$MOUNTPOINT/swapfile"
-umount  "$MOUNTPOINT"
-sleep 1
-set -e ## Back to failing the script like before
-echo
+	## Unmount everything
+	## ---------------------------------------------------------------------
+	echo 'Unmounting partitions...'
+	set +e ## It's okay if this section fails
+	swapoff "$MOUNTPOINT/swapfile"
+	umount  "$MOUNTPOINT"
+	sleep 1
+	set -e ## Back to failing the script like before
+	echo
+fi
 
 ## Cleanup
 ## ---------------------------------------------------------------------
