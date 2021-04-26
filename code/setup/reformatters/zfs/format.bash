@@ -60,13 +60,15 @@ declare -i ROOTSIZE=$(($SMALLEST_DISK_SIZE-$SWAPSIZE-$BOOTSIZE))
 
 ## Figure out which drives are SSDs and which are HDDS, so we can use the right mount options.
 ## ---------------------------------------------------------------------
-declare -a DISK_TYPES=()
+declare -a DISK_TYPES
 declare -i I=0
 while [[ $I -lt $DISK_COUNT ]]; do
 	DISK_TYPES[$I]=$(cat /sys/block/$(echo "${DISKS[$I]}" | sed 's/\/dev\///')/queue/rotational)
+	[[ "${DISK_TYPES[$I]}" != "${DISK_TYPES[$(($I-1))]}" ]] && echo 'I refuse to make a RAID1 of SSDs and HDDs mixed together.' && exit 1
 	let '++I'
 done
 unset I
+[[ ${DISKTYPES[0]} -eq 0 ]] && SSD=1 || SSD=0
 
 ## Unset unneeded variables
 ## ---------------------------------------------------------------------
@@ -83,10 +85,11 @@ MOUNTPOINT='/media/format-drives-test'
 MOUNT_ANY_OPTS='defaults,rw,async,iversion,nodiratime,relatime,strictatime,lazytime,auto' #mand
 MOUNT_VFAT_OPTS='check=relaxed,errors=remount-ro,tz=UTC,rodir,sys_immutable,flush' #iocharset=utf8
 MOUNT_BTRFS_OPTS="acl,noinode_cache,space_cache=v2,barrier,noflushoncommit,treelog,usebackuproot,datacow,datasum,compress=zstd,fatal_errors=bug,noenospc_debug,thread_pool=$NPROC,max_inline=$(echo $PAGESIZE*0.95 | bc | sed 's/\..*//')" #logreplay
-
-MOUNT_BTRFS_OPTS_SSD="${MOUNT_BTRFS_OPTS},noautodefrag,discard,ssd_spread"
-MOUNT_BTRFS_OPTS_HDD="${MOUNT_BTRFS_OPTS},autodefrag,nodiscard,nossd"
-unset MOUNT_BTRFS_OPTS
+if [[ SSD ]]; then
+	MOUNT_BTRFS_OPTS="${MOUNT_BTRFS_OPTS},noautodefrag,discard,ssd_spread"
+else
+	MOUNT_BTRFS_OPTS="${MOUNT_BTRFS_OPTS},autodefrag,nodiscard,nossd"
+fi
 
 ## Prepare system
 ## #####################################################################
@@ -179,18 +182,10 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 	unset MKFS_VFAT_OPTS MKFS_BTRFS_OPTS
 	sleep 1
 fi
-exit
 
 ## Prepare for Linux
 ## =====================================================================
-
-## Figure out whether we're using an SSD
-## ---------------------------------------------------------------------
-# if [[ "${DISK_TYPES[$I]}" = 0 ]]; then
-# 	MOUNT_BTRFS_OPTS="$MOUNT_BTRFS_OPTS_SSD"
-# else
-# 	MOUNT_BTRFS_OPTS="$MOUNT_BTRFS_OPTS_HDD"
-# fi
+exit
 
 ## First mounts (sanity check -- remember `set -e`?)
 ## ---------------------------------------------------------------------
