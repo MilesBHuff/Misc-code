@@ -30,7 +30,6 @@ while [[ true ]]; do
 done
 declare -i DISK_COUNT=$I
 unset I
-echo
 
 ## System information
 ## =====================================================================
@@ -87,7 +86,6 @@ MOUNT_BTRFS_OPTS="acl,noinode_cache,space_cache=v2,barrier,noflushoncommit,treel
 MOUNT_BTRFS_OPTS_SSD="${MOUNT_BTRFS_OPTS},noautodefrag,discard,ssd_spread"
 MOUNT_BTRFS_OPTS_HDD="${MOUNT_BTRFS_OPTS},autodefrag,nodiscard,nossd"
 unset MOUNT_BTRFS_OPTS
-echo
 
 ## Prepare system
 ## #####################################################################
@@ -103,17 +101,16 @@ for DISK in ${DISKS[@]}; do
 	done
 done
 set -e ## Back to failing the script like before
-echo
 
 ## Reformat the disks
 ## =====================================================================
-read -p ':: Reformat the disk? (y/N) ' INPUT
+read -p ':: Reformat the disks? (y/N) ' INPUT
 if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 
 	## Partition disks
 	## ---------------------------------------------------------------------
 	for DISK in ${DISKS[@]}; do
-		echo ':: Partitioning disk...'
+		echo "Partitioning '${DISK}'"
 		(	echo 'o'          ## Create a new GPT partition table
 			echo 'Y'          ## Confirm
 
@@ -148,7 +145,6 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 		) | gdisk "$DISK" > /dev/null
 	done
 	sleep 1
-	echo
 
 	## Refresh disks
 	## ---------------------------------------------------------------------
@@ -157,7 +153,6 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 	partprobe
 	sleep 1
 	set -e ## Back to failing the script like before
-	echo
 
 ## Figure out the partition prefix
 ## ---------------------------------------------------------------------
