@@ -2,23 +2,21 @@
 ## Copyright © by Miles Bradley Huff from 2016-2021 the LGPL3 (the Third Lesser GNU Public License)
 
 ## Get system info and declare variables
-## =====================================================================
+## #####################################################################
 
 ## Get the disks
-## ---------------------------------------------------------------------
+## =====================================================================
 declare -a DISKS=("$@")
 declare -i I=0
 while [[ true ]]; do
 	if [[ $I -ge 2 ]]; then
-		echo -n 'Add more disks? (y/N) '
-		read ANSWER
+		read -p 'Add more disks? (y/N) ' ANSWER
 		[[ "$ANSWER" != 'y' && "$ANSWER" != 'Y' ]] && break;
 	fi
 
 	while [[ true ]]; do
 		if [[ -z "${DISKS[$I]}" ]]; then
-			echo ":: Path to disk #$I: "
-			read DISKS[$I]
+			read -p ":: Path to disk #$I: " DISKS[$I]
 		fi
 
 		if [[ -e "${DISKS[$I]}" ]]; then
@@ -30,23 +28,49 @@ while [[ true ]]; do
 		fi
 	done
 done
+declare -i DISK_COUNT=$I
+unset I
 echo
 
 ## System information
-## ---------------------------------------------------------------------
+## =====================================================================
 set -e ## Fail the whole script if any command within it fails.
 echo ':: Gathering information...'
+
+## Basic stuff
+## ---------------------------------------------------------------------
+declare -i     NPROC=$(nproc)
+declare -i  PAGESIZE=$(getconf PAGESIZE)
+declare -i BLOCKSIZE=$(($PAGESIZE*256)) ## 1M with a 4k pagesize.  Idk if this should be dependent on pagesize.
+declare -i   MEMSIZE=$(free -b | grep 'Mem:' | sed -r 's/^Mem:\s*([0-9]+).*$/\1/')
+
+## RAID1s have to be based on the size of the smallest disk in the array.
+## ---------------------------------------------------------------------
+declare -i SMALLEST_DISK_SIZE=0
+for DISK in ${DISKS[@]}; do
+	# declare -i SIZE=$(fdisk -l /dev/nvme1n1 | sed -r 's/^Disk .*? (\d+) bytes, [\s\S]*$/\1/')
+	declare -i SIZE=$(fdisk -l /dev/nvme1n1 | grep Disk | grep sectors | sed -r 's/^.*? ([0-9]+) bytes.*$/\1/' | xargs)
+	[[ $SMALLEST_DISK_SIZE -eq 0 || $SIZE -lt $SMALLEST_DISK_SIZE ]] && SMALLEST_DISK_SIZE=$SIZE
+done
+
+## Partition sizes
+## ---------------------------------------------------------------------
+declare -i SWAPSIZE=$(($MEMSIZE/$DISK_COUNT)) ## We need at least as much swap as memory if we want to hibernate.
+declare -i ROOTSIZE=$(($SMALLEST_DISK_SIZE-$SWAPSIZE))
+BOOTSIZE='500M' ## 500MB/477MiB is the recommended size for the EFI partition when used as /boot (https://www.freedesktop.org/wiki/Specifications/BootLoaderSpec)
+
+## Figure out which drives are SSDs and which are HDDS, so we can use the right mount options.
+## ---------------------------------------------------------------------
 declare -a TYPES=()
 declare -i J=0
-while [[ $J -lt $I ]]; do
+while [[ $J -lt $DISK_COUNT ]]; do
 	TYPES[$J]=$(cat /sys/block/$(echo "${DISKS[$J]}" | sed 's/\/dev\///')/queue/rotational)
 	let '++J'
 done
-BOOTSIZE="500M" ## 500MB/477MiB is the recommended size for the EFI partition when used as /boot (https://www.freedesktop.org/wiki/Specifications/BootLoaderSpec)
-MEMSIZE="$(free -b | grep 'Mem:' | sed 's/Mem:\s*//' | sed 's/\s.*//' )"
-PAGESIZE="$(getconf PAGESIZE)"
-BLOCKSIZE="$(($PAGESIZE*256))" ## 1M with a 4k pagesize.  Idk if this should be dependent on pagesize.
-NPROC="$(nproc)"
+
+## Unset unneeded variables
+## ---------------------------------------------------------------------
+unset J SMALLEST_DISK_SIZE MEMSIZE
 
 ## Formatting settings
 ## ---------------------------------------------------------------------
@@ -59,16 +83,17 @@ MOUNTPOINT='/media/format-drives-test'
 MOUNT_ANY_OPTS='defaults,rw,async,iversion,nodiratime,relatime,strictatime,lazytime,auto' #mand
 MOUNT_VFAT_OPTS='check=relaxed,errors=remount-ro,tz=UTC,rodir,sys_immutable,flush' #iocharset=utf8
 MOUNT_BTRFS_OPTS="acl,noinode_cache,space_cache=v2,barrier,noflushoncommit,treelog,usebackuproot,datacow,datasum,compress=zstd,fatal_errors=bug,noenospc_debug,thread_pool=$NPROC,max_inline=$(echo $PAGESIZE*0.95 | bc | sed 's/\..*//')" #logreplay
+
 MOUNT_BTRFS_OPTS_SSD="${MOUNT_BTRFS_OPTS},noautodefrag,discard,ssd_spread"
 MOUNT_BTRFS_OPTS_HDD="${MOUNT_BTRFS_OPTS},autodefrag,nodiscard,nossd"
 unset MOUNT_BTRFS_OPTS
 echo
 
 ## Prepare system
-## =====================================================================
+## #####################################################################
 
-## Unmount disk
-## ---------------------------------------------------------------------
+## Unmount the disks
+## =====================================================================
 echo ':: Making sure the disks are not mounted...'
 set +e ## It's okay if this section fails
 for DISK in ${DISKS[@]}; do
@@ -79,41 +104,50 @@ for DISK in ${DISKS[@]}; do
 done
 set -e ## Back to failing the script like before
 echo
-exit
 
-## Reformat the disk
+## Reformat the disks
 ## =====================================================================
 read -p ':: Reformat the disk? (y/N) ' INPUT
-echo
 if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 
-	## Partition disk
+	## Partition disks
 	## ---------------------------------------------------------------------
-	echo ':: Partitioning disk...'
-	(	echo 'o'          ## Create a new GPT partition table
-		echo 'Y'          ## Confirm
+	for DISK in ${DISKS[@]}; do
+		echo ':: Partitioning disk...'
+		(	echo 'o'          ## Create a new GPT partition table
+			echo 'Y'          ## Confirm
 
-		echo 'n'          ## Create a new partition
-		echo ''           ## Choose the default partition number  (1)
-		echo ''           ## Choose the default start location (2048)
-		echo "+$BOOTSIZE" ## Make it as large as $BOOTSIZE
-		echo 'ef00'       ## Declare it to be a UEFI partition
-		echo 'c'          ## Change a partition's name
-		echo '1'          ## The partition whose name to change
-		echo 'BOOT'       ## The name of the partition
+			echo 'n'          ## Create a new partition
+			echo '1'          ## Choose the partition number
+			echo ''           ## Choose the default start location (2048)
+			echo "+$BOOTSIZE" ## Make it as large as $BOOTSIZE
+			echo 'ef00'       ## Declare it to be a UEFI partition
+			echo 'c'          ## Change a partition's name
+			echo '1'          ## The partition whose name to change
+			echo 'BOOT'       ## The name of the partition
 
-		echo 'n'          ## Create a new partition
-		echo ''           ## Choose the default partition number  (2)
-		echo ''           ## Choose the default start location (where the last partition ended)
-		echo ''           ## Choose the default end location   (the end of the disk)
-		echo '8300'       ## Declare it to be a Linux x86-64 root partition
-		echo 'c'          ## Change a partition's name
-		echo '2'          ## The partition whose name to change
-		echo 'ROOT'       ## The name of the partition
+			echo 'n'          ## Create a new partition
+			echo '2'          ## Choose the partition number
+			echo ''           ## Choose the default start location (where the last partition ended)
+			echo "+$ROOTSIZE" ## Make it as large as $ROOTSIZE
+			echo '8300'       ## Declare it to be a Linux x86-64 root partition
+			echo 'c'          ## Change a partition's name
+			echo '2'          ## The partition whose name to change
+			echo 'ROOT'       ## The name of the partition
 
-		echo 'w'          ## Write the changes to disk
-		echo 'Y'          ## Confirm
-	) | gdisk "$DISK"
+			echo 'n'          ## Create a new partition
+			echo '3'          ## Choose the partition number
+			echo ''           ## Choose the default start location (where the last partition ended)
+			echo ''           ## Choose the default end location   (the end of the disk)
+			echo '8200'       ## Declare it to be a Linux x86-64 swap partition
+			echo 'c'          ## Change a partition's name
+			echo '3'          ## The partition whose name to change
+			echo 'SWAP'       ## The name of the partition
+
+			echo 'w'          ## Write the changes to disk
+			echo 'Y'          ## Confirm
+		) | gdisk "$DISK"
+	done
 	sleep 1
 	echo
 
@@ -129,9 +163,9 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 ## Figure out the partition prefix
 ## ---------------------------------------------------------------------
 fi
+exit
 [[ ! -f "${DISK}1" ]] && PART='p'
 if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
-
 
 	## Format partitions
 	## ---------------------------------------------------------------------
