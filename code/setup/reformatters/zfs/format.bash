@@ -88,6 +88,12 @@ MOUNT_ANY_OPTS='defaults,rw,async,iversion,nodiratime,relatime,strictatime,lazyt
 MOUNT_VFAT_OPTS='check=relaxed,errors=remount-ro,tz=UTC,rodir,sys_immutable,flush' #iocharset=utf8
 MOUNT_ZFS_OPTS=''
 
+## Names & labels
+## ---------------------------------------------------------------------
+RPOOL_NAME='ROOT'
+  ESP_NAME='BOOT'
+ SWAP_NAME='SWAP'
+
 ## Prepare system
 ## #####################################################################
 
@@ -178,8 +184,8 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 	declare -i I=0
 	while [[ $I -lt $DISK_COUNT ]]; do
 		echo "Formatting disk '${DISK}'..."
-		mkfs.vfat  $MKFS_VFAT_OPTS -n 'BOOT' "${DISKS[$I]}${PART_LABELS[$I]}1" 1>/dev/null
-		mkswap -p "$PAGESIZE"      -L 'SWAP' "${DISKS[$I]}${PART_LABELS[$I]}3" 1>/dev/null
+		mkfs.vfat  $MKFS_VFAT_OPTS -n "$ESP_NAME" "${DISKS[$I]}${PART_LABELS[$I]}1" 1>/dev/null
+		mkswap -p "$PAGESIZE"      -L "$SWAP_NAME" "${DISKS[$I]}${PART_LABELS[$I]}3" 1>/dev/null
 		let '++I'
 	done
 	unset MKFS_VFAT_OPTS
@@ -194,7 +200,7 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 		let '++I'
 	done
 	unset I
-	zpool create POOL -fm "/mnt" mirror "${POOL_PARTS[@]}"
+	zpool create "$RPOOL_NAME" -fm "/mnt" mirror "${POOL_PARTS[@]}"
 	sleep 1
 	umount "/mnt"
 	sleep 1
