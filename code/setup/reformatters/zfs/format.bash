@@ -37,6 +37,12 @@ unset I
 set -e ## Fail the whole script if any command within it fails.
 echo ':: Gathering information...'
 
+## Integer divions with rounding
+## ---------------------------------------------------------------------
+function rounded_integer_division {
+	echo "($1 + ($2 / 2)) / $2" | bc
+}
+
 ## Basic stuff
 ## ---------------------------------------------------------------------
 declare -i     NPROC=$(nproc)
@@ -56,7 +62,8 @@ done
 ## Partition sizes
 ## ---------------------------------------------------------------------
 declare -i BOOTSIZE=$((500*1024*1024)) ## 500MB/477MiB is the recommended size for the EFI partition when used as /boot (https://www.freedesktop.org/wiki/Specifications/BootLoaderSpec)
-declare -i SWAPSIZE=$(($MEMSIZE/$DISK_COUNT)) ## We need at least as much swap as memory if we want to hibernate.
+# declare -i SWAPSIZE=$(rounded_integer_division "$MEMSIZE"       "$DISK_COUNT") ## We need at least as much swap as memory if we want to hibernate.
+declare -i SWAPSIZE=$(rounded_integer_division  "($MEMSIZE * .2)" "$DISK_COUNT") ## If we don't want to hibernate, we can just do 20% of RAM (RedHat recommendation).
 declare -i ROOTSIZE=$(($SMALLEST_DISK_SIZE-$SWAPSIZE-$BOOTSIZE))
 
 ## Figure out which drives are SSDs and which are HDDS, so we can use the right mount options.
