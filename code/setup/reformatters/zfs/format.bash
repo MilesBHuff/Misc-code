@@ -97,6 +97,14 @@ RPOOL_NAME='ROOT'
 ## Prepare system
 ## #####################################################################
 
+## Destroy existing ZFS structures
+## =====================================================================
+function zap_zfs {
+	set +e
+	zpool destroy "$RPOOL_NAME" 2>/dev/null
+	set -e
+}
+
 ## Unmount the disks
 ## =====================================================================
 echo ':: Making sure the disks are not mounted...'
@@ -113,6 +121,7 @@ set -e ## Back to failing the script like before
 ## =====================================================================
 read -p ':: Partition the disks? (y/N) ' INPUT
 if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
+	zap_zfs
 
 	## Partition disks
 	## ---------------------------------------------------------------------
@@ -178,6 +187,7 @@ unset I
 ## =====================================================================
 read -p ':: Format the disks? (y/N) ' INPUT
 if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
+	zap_zfs
 
 	## Format partitions
 	## ---------------------------------------------------------------------
