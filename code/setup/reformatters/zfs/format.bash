@@ -3,6 +3,8 @@
 
 ## Get system info and declare variables
 ## #####################################################################
+USE_NAMESPACES= ## Some NVMe drives have buggy firmware that does not allow you to delete namespaces.  If you are affected by such an issue, set this to `0`.
+[[ $USE_NAMESPACES ]] && echo 'If using NVMe disks, do not include the namespace!' >&2
 
 ## Get the disks
 ## =====================================================================
@@ -48,23 +50,7 @@ function rounded_integer_division {
 declare -i     NPROC=$(nproc)
 declare -i  PAGESIZE=$(getconf PAGESIZE)
 declare -i BLOCKSIZE=$(($PAGESIZE*256)) ## 1M with a 4k pagesize.  Idk if this should be dependent on pagesize.
-declare -i   MEMSIZE=$(free -b | grep 'Mem:' | sed -r 's/^Mem:\s*([0-9]+).*$/\1/')
-
-## RAID1s have to be based on the size of the smallest disk in the array.
-## ---------------------------------------------------------------------
-declare -i SMALLEST_DISK_SIZE=0
-for DISK in ${DISKS[@]}; do
-	# declare -i SIZE=$(fdisk -l "$DISK" | sed -r 's/^Disk .*? (\d+) bytes, [\s\S]*$/\1/')
-	declare -i SIZE=$(fdisk -l "$DISK" | grep Disk | grep sectors | sed -r 's/^.*? ([0-9]+) bytes.*$/\1/' | xargs)
-	[[ $SMALLEST_DISK_SIZE -eq 0 || $SIZE -lt $SMALLEST_DISK_SIZE ]] && SMALLEST_DISK_SIZE=$SIZE
-done
-
-## Partition sizes
-## ---------------------------------------------------------------------
-declare -i BOOTSIZE=$((500*1024*1024)) ## 500MB/477MiB is the recommended size for the EFI partition when used as /boot (https://www.freedesktop.org/wiki/Specifications/BootLoaderSpec)
-# declare -i SWAPSIZE=$(rounded_integer_division "$MEMSIZE"       "$DISK_COUNT") ## We need at least as much swap as memory if we want to hibernate.
-declare -i SWAPSIZE=$(rounded_integer_division  "($MEMSIZE * .2)" "$DISK_COUNT") ## If we don't want to hibernate, we can just do 20% of RAM (RedHat recommendation).
-declare -i ROOTSIZE=$(($SMALLEST_DISK_SIZE-$SWAPSIZE-$BOOTSIZE))
+declare -i   MEM_SIZE=$(free -b | grep 'Mem:' | sed -r 's/^Mem:\s*([0-9]+).*$/\1/')
 
 ## Figure out which drives are SSDs and which are HDDS, so we can use the right mount options.
 ## ---------------------------------------------------------------------
@@ -72,16 +58,52 @@ declare -a DISK_TYPES
 declare -i I=0
 while [[ $I -lt $DISK_COUNT ]]; do
 	DISK_TYPES[$I]=$(cat /sys/block/$(echo "${DISKS[$I]}" | sed 's/\/dev\///')/queue/rotational)
-	[[ "${DISK_TYPES[$I]}" != "${DISK_TYPES[$(($I-1))]}" ]] && echo 'I refuse to make a RAID1 of SSDs and HDDs mixed together.' && exit 1
+	[[ "${DISK_TYPES[$I]}" != "${DISK_TYPES[$(($I-1))]}" ]] && echo 'I refuse to make a RAID of SSDs and HDDs mixed together.' && exit 1
 	let '++I'
 done
 unset I
-[[ ${DISKTYPES[0]} -eq 0 ]] && SSD=1 || SSD=0
+[[ ${DISK_TYPES[0]} -eq 0 ]] && SSD=1 || SSD=
 unset DISK_TYPES
+
+## Figure out which drives are NVME and which are SATA, so we can know whether to use namespaces
+## ---------------------------------------------------------------------
+declare -a DISK_TYPES
+declare -i I=0
+while [[ $I -lt $DISK_COUNT ]]; do
+	DISK_TYPES[$I]=$(if [[ "${DISKS[$I]}" = *'nvme'* ]]; then echo '1'; else echo '0'; fi)
+	[[ "${DISK_TYPES[$I]}" != "${DISK_TYPES[$(($I-1))]}" ]] && echo 'I refuse to make a RAID of NVMe and SATA drives mixed together.' && exit 1
+	let '++I'
+done
+unset I
+[[ ${DISK_TYPES[0]} -eq 1 ]] && NVME=1 || NVME=
+unset DISK_TYPES
+[[ $NVME ]] && PART_LABEL='p' || PART_LABEL=''
+
+## RAID1s have to be based on the size of the smallest disk in the array.
+## ---------------------------------------------------------------------
+declare -i SMALLEST_DISK_SIZE=0
+for DISK in ${DISKS[@]}; do
+	if [[ $NVME && $USE_NAMESPACES ]]; then
+		declare -i SIZE=$(nvme id-ctrl "${DISKS[$I]}" | grep nvmcap | sed -r 's/^[tu]nvmcap.*?: //gm' | xargs | sed 's/ /+/' | bc)
+	else
+		# declare -i SIZE=$(fdisk -l "${DISKS[$I]}" | sed -r 's/^Disk .*? (\d+) bytes, [\s\S]*$/\1/') ## Would work if `sed` didn't suck.
+		declare -i SIZE=$(fdisk -l "${DISKS[$I]}" | grep Disk | grep sectors | sed -r 's/^.*? ([0-9]+) bytes.*$/\1/' | xargs)
+	fi
+	[[ $SSD && USE_NAMESPACES ]] && SIZE=$(rounded_integer_division $(($SIZE * 9)) 10) ## SSDs should be over-provisioned.
+	[[ $SMALLEST_DISK_SIZE -eq 0 || $SIZE -lt $SMALLEST_DISK_SIZE ]] && SMALLEST_DISK_SIZE=$SIZE
+done
+
+## Partition sizes
+## ---------------------------------------------------------------------
+declare -i START_SIZE=2048 ## The standard amount of space before partitions
+declare -i   ESP_SIZE=$((500*1024*1024)) ## 500MB/477MiB is the recommended size for the EFI partition when used as /boot (https://www.freedesktop.org/wiki/Specifications/BootLoaderSpec)
+#declare -i SWAP_SIZE=$(rounded_integer_division  "$MEM_SIZE"       "$DISK_COUNT") ## We need at least as much swap as memory if we want to hibernate.
+declare -i  SWAP_SIZE=$(rounded_integer_division "($MEM_SIZE * .2)" "$DISK_COUNT") ## If we don't want to hibernate, we can just do 20% of RAM (Red Hat recommendation).
+declare -i  ROOT_SIZE=$(($SMALLEST_DISK_SIZE-$SWAP_SIZE-$ESP_SIZE))
 
 ## Unset unneeded variables
 ## ---------------------------------------------------------------------
-unset SMALLEST_DISK_SIZE MEMSIZE SWAPSIZE
+unset SMALLEST_DISK_SIZE MEM_SIZE
 
 ## Formatting settings
 ## ---------------------------------------------------------------------
@@ -95,15 +117,15 @@ MAKE_VFAT_OPTS=''
 	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -S $PAGESIZE"
 #	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -r 512"
 MAKE_ZPOOL_OPTS=''
-	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -o 'ashift=12'"        ## ashift=12 is 4096, appropriate for Advanced Format drives, which is basically everything these days.
-	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O 'acltype=posixacl'" ## Required for `journald`
-	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O 'compression=zst'"  ## Compression improves IO performance and increases available storage, at the cost of a small amount of CPU.  ZST is currently the best all-round compression algorithm.
-	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O 'relatime=on'"      ## A classic Linuxy alternative to `atime`
-	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O 'xattr=sa'"         ## Helps performance, but makes xattrs Linux-specific.
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -o ashift=12"        ## ashift=12 is 4096, appropriate for Advanced Format drives, which is basically everything these days.
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O acltype=posixacl" ## Required for `journald`
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O compression=zstd" ## Compression improves IO performance and increases available storage, at the cost of a small amount of CPU.  ZSTD is currently the best all-round compression algorithm.
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O relatime=on"      ## A classic Linuxy alternative to `atime`
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O xattr=sa"         ## Helps performance, but makes xattrs Linux-specific.
 
 ## Mount options
 ## ---------------------------------------------------------------------
-MOUNTPOINT='/media/format-drives-test'
+MOUNTPOINT='/mnt'
 MOUNT_ANY_OPTS='defaults,rw,async,iversion,nodiratime,relatime,strictatime,lazytime,auto' #mand
 MOUNT_VFAT_OPTS='check=relaxed,errors=remount-ro,tz=UTC,rodir,sys_immutable,flush' #iocharset=utf8
 MOUNT_ZFS_OPTS=''
@@ -124,7 +146,7 @@ DATA_NAME_STAT='static'
 ## =====================================================================
 function zap_zfs {
 	set +e
-	zpool destroy "$POOL_NAME_ROOT" 2>/dev/null
+	zpool destroy "$POOL_NAME_ROOT" 2>&1 >/dev/null
 	set -e
 }
 
@@ -145,44 +167,108 @@ set -e ## Back to failing the script like before
 read -p ':: Partition the disks? (y/N) ' INPUT
 if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 	zap_zfs
-
-	## Partition disks
-	## ---------------------------------------------------------------------
 	for DISK in "${DISKS[@]}"; do
 		echo "Partitioning '${DISK}'..."
-		sgdisk --zap-all "${DISK}"
-		(	echo 'o' ## Create a new GPT partition table
-			echo 'Y' ## Confirm
 
-			echo 'n'                          ## Create a new partition
-			echo ''                           ## Use the default partition number (1)
-			echo ''                           ## Choose the default start location (2048)
-			echo "+$(($BOOTSIZE/1024/1024))M" ## Make it as large as $BOOTSIZE
-			echo 'ef00'                       ## Declare it to be a UEFI partition
-			echo 'c'                          ## Change a partition's name
-			echo "$PART_NAME_BOOT"            ## The name of the partition
+		## Partition disks (with namespaces)
+		## ---------------------------------------------------------------------
+		if [[ $NVME && $USE_NAMESPACES ]]; then
 
-			echo 'n'                               ## Create a new partition
-			echo '2'                               ## Choose the partition number
-			echo ''                                ## Choose the default start location (where the last partition ended)
-			echo "+$(($ROOTSIZE/1024/1024/1024))G" ## Make it as large as $ROOTSIZE
-			echo 'bf00'                            ## Declare it to be a Solaris root partition
-			echo 'c'                               ## Change a partition's name
-			echo '2'                               ## The partition whose name to change
-			echo "$PART_NAME_ROOT"                 ## The name of the partition
+			## Wipe out old namespaces
+			declare -i I=1
+			while true; do
+				[[ ! -e "${DISK}n$I" ]] && break
+				nvme detach-ns -n $I "$DISK"
+				nvme delete-ns -n $I "$DISK"
+				let '++I'
+			done
+			unset I
 
-			echo 'n'               ## Create a new partition
-			echo '3'               ## Choose the partition number
-			echo ''                ## Choose the default start location (where the last partition ended)
-			echo ''                ## Choose the default end location   (the end of the disk)
-			echo '8200'            ## Declare it to be a Linux x86-64 swap partition
-			echo 'c'               ## Change a partition's name
-			echo '3'               ## The partition whose name to change
-			echo "$PART_NAME_SWAP" ## The name of the partition
+			## ZFS prefers whole disks;  NVMe drives have namespaces, which allow us to do exactly this, while compromising on nothing.
+			nvme create-ns -b 4096 -s $(($START_SIZE + $ESP_SIZE + $SWAP_SIZE)) "$DISK"
+			nvme attach-ns -n 1 "$DISK"
+			DISK_N1="${DISK}n1"
+			nvme create-ns -b 4096 -s $(($START_SIZE + $ROOT_SIZE)) "$DISK"
+			nvme attach-ns -n 2 "$DISK"
+			DISK_N2="${DISK}n2"
 
-			echo 'w' ## Write the changes to disk
-			echo 'Y' ## Confirm
-		) | gdisk "$DISK" 1>/dev/null
+			(	echo 'o' ## Create a new GPT partition table
+				echo 'Y' ## Confirm
+
+				echo 'n'                          ## Create a new partition
+				echo ''                           ## Use the default partition number (1)
+				echo "$START_SIZE"                ## Choose the default start location (2048)
+				echo "+$(($ESP_SIZE/1024/1024))M" ## Make it as large as $ESP_SIZE
+				echo 'ef00'                       ## Declare it to be a UEFI partition
+				echo 'c'                          ## Change a partition's name
+				echo "$PART_NAME_BOOT"            ## The name of the partition
+
+				echo 'n'               ## Create a new partition
+				echo '2'               ## Choose the partition number
+				echo ''                ## Choose the default start location (where the last partition ended)
+				echo ''                ## Choose the default end location   (the end of the disk)
+				echo '8200'            ## Declare it to be a Linux x86-64 swap partition
+				echo 'c'               ## Change a partition's name
+				echo '2'               ## The partition whose name to change
+				echo "$PART_NAME_SWAP" ## The name of the partition
+
+				echo 'w' ## Write the changes to disk
+				echo 'Y' ## Confirm
+			) | gdisk "$DISK_N1" 1>/dev/null
+
+			(	echo 'n'                                ## Create a new partition
+				echo '1'                                ## Choose the partition number
+				echo "$START_SIZE"                      ## Choose the default start location (2048)
+				echo "+$(($ROOT_SIZE/1024/1024/1024))G" ## Make it as large as $ROOT_SIZE
+				echo 'bf00'                             ## Declare it to be a Solaris root partition
+				echo 'c'                                ## Change a partition's name
+				echo '1'                                ## The partition whose name to change
+				echo "$PART_NAME_ROOT"                  ## The name of the partition
+
+				echo 'w' ## Write the changes to disk
+				echo 'Y' ## Confirm
+			) | gdisk "$DISK_N2" 1>/dev/null
+
+			unset DISK_N1 DISK_N2
+
+		## Partition disks (without namespaces)
+		## ---------------------------------------------------------------------
+		else
+			sgdisk --zap-all "$DISK" 2>&1 >/dev/null
+
+			(	echo 'o' ## Create a new GPT partition table
+				echo 'Y' ## Confirm
+
+				echo 'n'                          ## Create a new partition
+				echo ''                           ## Use the default partition number (1)
+				echo "$START_SIZE"                ## Choose the default start location (2048)
+				echo "+$(($ESP_SIZE/1024/1024))M" ## Make it as large as $ESP_SIZE
+				echo 'ef00'                       ## Declare it to be a UEFI partition
+				echo 'c'                          ## Change a partition's name
+				echo "$PART_NAME_BOOT"            ## The name of the partition
+
+				echo 'n'                                ## Create a new partition
+				echo '2'                                ## Choose the partition number
+				echo ''                                 ## Choose the default start location (where the last partition ended)
+				echo "+$(($ROOT_SIZE/1024/1024/1024))G" ## Make it as large as $ROOT_SIZE
+				echo 'bf00'                             ## Declare it to be a Solaris root partition
+				echo 'c'                                ## Change a partition's name
+				echo '2'                                ## The partition whose name to change
+				echo "$PART_NAME_ROOT"                  ## The name of the partition
+
+				echo 'n'               ## Create a new partition
+				echo '3'               ## Choose the partition number
+				echo ''                ## Choose the default start location (where the last partition ended)
+				echo ''                ## Choose the default end location   (the end of the disk)
+				echo '8200'            ## Declare it to be a Linux x86-64 swap partition
+				echo 'c'               ## Change a partition's name
+				echo '3'               ## The partition whose name to change
+				echo "$PART_NAME_SWAP" ## The name of the partition
+
+				echo 'w' ## Write the changes to disk
+				echo 'Y' ## Confirm
+			) | gdisk "$DISK" 1>/dev/null
+		fi
 	done
 	sleep 1
 
@@ -195,32 +281,20 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 	set -e ## Back to failing the script like before
 
 fi
-## Figure out the partition labels for the drives
-## ---------------------------------------------------------------------
-declare -a PART_LABELS
-declare -i I=0
-while [[ $I -lt $DISK_COUNT ]]; do
-	PART_LABELS[$I]=''
-	[[ ! -e "${DISKS[$I]}1" ]] && PART_LABELS[$I]='p'
-	[[ ! -e "${DISKS[$I]}${PART_LABELS[$I]}1" ]] && echo "Couldn't find partition!" >&2 && exit 1
-	let '++I'
-done
-unset I
 
 ## Reformat the disks
 ## =====================================================================
 read -p ':: Format the disks? (y/N) ' INPUT
 if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
+	[[ $USE_NAMESPACES ]] && echo 'NVMe namespaces not implemented!' >&2 && exit 1
 	zap_zfs
 
 	## Format partitions
 	## ---------------------------------------------------------------------
-	declare -i I=0
-	while [[ $I -lt $DISK_COUNT ]]; do
+	for DISK in "${DISKS[@]}"; do
 		echo "Formatting disk '${DISK}'..."
-		mkfs.vfat  $MAKE_VFAT_OPTS -n  "$ESP_NAME" "${DISKS[$I]}${PART_LABELS[$I]}1" 1>/dev/null
-		mkswap -p "$PAGESIZE"      -L "$SWAP_NAME" "${DISKS[$I]}${PART_LABELS[$I]}3" 1>/dev/null
-		let '++I'
+		mkfs.vfat  $MAKE_VFAT_OPTS -n  "$ESP_NAME" "${DISK}${PART_LABEL}1" 2>&1 >/dev/null
+		mkswap -p "$PAGESIZE"      -L "$SWAP_NAME" "${DISK}${PART_LABEL}3" 2>&1 >/dev/null
 	done
 	unset MAKE_VFAT_OPTS
 
@@ -230,14 +304,11 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 	declare -a POOL_PARTS
 	declare -i I=0
 	while [[ $I -lt $DISK_COUNT ]]; do
-		POOL_PARTS[$I]=${DISKS[$I]}${PART_LABELS[$I]}2
+		POOL_PARTS[$I]=${DISKS[$I]}${PART_LABEL}2
 		let '++I'
 	done
 	unset I
-	zpool create "$POOL_NAME_ROOT" "$MAKE_ZPOOL_OPTS" -fm "/mnt" mirror "${POOL_PARTS[@]}"
-	sleep 1
-	umount "/mnt"
-	sleep 1
+	zpool create "$POOL_NAME_ROOT" $MAKE_ZPOOL_OPTS -fm "$MOUNTPOINT" mirror "${POOL_PARTS[@]}"
 
 	## Create datasets
 	## ---------------------------------------------------------------------
