@@ -85,8 +85,21 @@ unset SMALLEST_DISK_SIZE MEMSIZE SWAPSIZE
 
 ## Formatting settings
 ## ---------------------------------------------------------------------
-MKFS_VFAT_OPTS=" -F 32 -b 6 -f 1 -h 6 -R 12 -s 1 -S $PAGESIZE " # -r 512
+MAKE_VFAT_OPTS=''
+	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -F 32" ## Fat size (32)
+	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -b  6"
+	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -f  1"
+	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -h  6"
+	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -R 12"
+	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -s  1"
+	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -S $PAGESIZE"
+#	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -r 512"
 MAKE_ZPOOL_OPTS=''
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -o 'ashift=12'"        ## ashift=12 is 4096, appropriate for Advanced Format drives, which is basically everything these days.
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O 'acltype=posixacl'" ## Required for `journald`
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O 'compression=zst'"  ## Compression improves IO performance and increases available storage, at the cost of a small amount of CPU.  ZST is currently the best all-round compression algorithm.
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O 'relatime=on'"      ## A classic Linuxy alternative to `atime`
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O 'xattr=sa'"         ## Helps performance, but makes xattrs Linux-specific.
 
 ## Mount options
 ## ---------------------------------------------------------------------
