@@ -86,7 +86,7 @@ unset SMALLEST_DISK_SIZE MEMSIZE SWAPSIZE
 ## Formatting settings
 ## ---------------------------------------------------------------------
 MKFS_VFAT_OPTS=" -F 32 -b 6 -f 1 -h 6 -R 12 -s 1 -S $PAGESIZE " # -r 512
-MKFS_ZFS_OPTS=""
+MAKE_ZPOOL_OPTS=''
 
 ## Mount options
 ## ---------------------------------------------------------------------
@@ -97,9 +97,12 @@ MOUNT_ZFS_OPTS=''
 
 ## Names & labels
 ## ---------------------------------------------------------------------
-RPOOL_NAME='ROOT'
-  ESP_NAME='BOOT'
- SWAP_NAME='SWAP'
+PART_NAME_ROOT='linux'
+PART_NAME_BOOT='esp'
+PART_NAME_SWAP='swap'
+POOL_NAME_ROOT='rpool'
+DATA_NAME_MAIN='main'
+DATA_NAME_STAT='static'
 
 ## Prepare system
 ## #####################################################################
@@ -108,7 +111,7 @@ RPOOL_NAME='ROOT'
 ## =====================================================================
 function zap_zfs {
 	set +e
-	zpool destroy "$RPOOL_NAME" 2>/dev/null
+	zpool destroy "$POOL_NAME_ROOT" 2>/dev/null
 	set -e
 }
 
@@ -134,37 +137,38 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 	## ---------------------------------------------------------------------
 	for DISK in "${DISKS[@]}"; do
 		echo "Partitioning '${DISK}'..."
-		(	echo 'o'          ## Create a new GPT partition table
-			echo 'Y'          ## Confirm
+		sgdisk --zap-all "${DISK}"
+		(	echo 'o' ## Create a new GPT partition table
+			echo 'Y' ## Confirm
 
-			echo 'n'          ## Create a new partition
-			echo ''           ## Use the default partition number (1)
-			echo ''           ## Choose the default start location (2048)
+			echo 'n'                          ## Create a new partition
+			echo ''                           ## Use the default partition number (1)
+			echo ''                           ## Choose the default start location (2048)
 			echo "+$(($BOOTSIZE/1024/1024))M" ## Make it as large as $BOOTSIZE
-			echo 'ef00'       ## Declare it to be a UEFI partition
-			echo 'c'          ## Change a partition's name
-			echo 'BOOT'       ## The name of the partition
+			echo 'ef00'                       ## Declare it to be a UEFI partition
+			echo 'c'                          ## Change a partition's name
+			echo "$PART_NAME_BOOT"            ## The name of the partition
 
-			echo 'n'          ## Create a new partition
-			echo '2'          ## Choose the partition number
-			echo ''           ## Choose the default start location (where the last partition ended)
+			echo 'n'                               ## Create a new partition
+			echo '2'                               ## Choose the partition number
+			echo ''                                ## Choose the default start location (where the last partition ended)
 			echo "+$(($ROOTSIZE/1024/1024/1024))G" ## Make it as large as $ROOTSIZE
-			echo '8300'       ## Declare it to be a Linux x86-64 root partition
-			echo 'c'          ## Change a partition's name
-			echo '2'          ## The partition whose name to change
-			echo 'ROOT'       ## The name of the partition
+			echo 'bf00'                            ## Declare it to be a Solaris root partition
+			echo 'c'                               ## Change a partition's name
+			echo '2'                               ## The partition whose name to change
+			echo "$PART_NAME_ROOT"                 ## The name of the partition
 
-			echo 'n'          ## Create a new partition
-			echo '3'          ## Choose the partition number
-			echo ''           ## Choose the default start location (where the last partition ended)
-			echo ''           ## Choose the default end location   (the end of the disk)
-			echo '8200'       ## Declare it to be a Linux x86-64 swap partition
-			echo 'c'          ## Change a partition's name
-			echo '3'          ## The partition whose name to change
-			echo 'SWAP'       ## The name of the partition
+			echo 'n'               ## Create a new partition
+			echo '3'               ## Choose the partition number
+			echo ''                ## Choose the default start location (where the last partition ended)
+			echo ''                ## Choose the default end location   (the end of the disk)
+			echo '8200'            ## Declare it to be a Linux x86-64 swap partition
+			echo 'c'               ## Change a partition's name
+			echo '3'               ## The partition whose name to change
+			echo "$PART_NAME_SWAP" ## The name of the partition
 
-			echo 'w'          ## Write the changes to disk
-			echo 'Y'          ## Confirm
+			echo 'w' ## Write the changes to disk
+			echo 'Y' ## Confirm
 		) | gdisk "$DISK" 1>/dev/null
 	done
 	sleep 1
@@ -201,11 +205,11 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 	declare -i I=0
 	while [[ $I -lt $DISK_COUNT ]]; do
 		echo "Formatting disk '${DISK}'..."
-		mkfs.vfat  $MKFS_VFAT_OPTS -n "$ESP_NAME" "${DISKS[$I]}${PART_LABELS[$I]}1" 1>/dev/null
+		mkfs.vfat  $MAKE_VFAT_OPTS -n  "$ESP_NAME" "${DISKS[$I]}${PART_LABELS[$I]}1" 1>/dev/null
 		mkswap -p "$PAGESIZE"      -L "$SWAP_NAME" "${DISKS[$I]}${PART_LABELS[$I]}3" 1>/dev/null
 		let '++I'
 	done
-	unset MKFS_VFAT_OPTS
+	unset MAKE_VFAT_OPTS
 
 	## Create zpool
 	## ---------------------------------------------------------------------
@@ -217,7 +221,7 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 		let '++I'
 	done
 	unset I
-	zpool create "$RPOOL_NAME" -fm "/mnt" mirror "${POOL_PARTS[@]}"
+	zpool create "$POOL_NAME_ROOT" "$MAKE_ZPOOL_OPTS" -fm "/mnt" mirror "${POOL_PARTS[@]}"
 	sleep 1
 	umount "/mnt"
 	sleep 1
@@ -225,7 +229,8 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 	## Create datasets
 	## ---------------------------------------------------------------------
 	echo 'Creating datasets...'
-	#TODO
+	zfs create "$POOL_NAME_ROOT/$DATA_NAME_MAIN"
+	zfs create "$POOL_NAME_ROOT/$DATA_NAME_STAT"
 fi
 
 ## Prepare for Linux
