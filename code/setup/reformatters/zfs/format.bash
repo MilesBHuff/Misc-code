@@ -216,14 +216,14 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 				echo 'Y' ## Confirm
 			) | gdisk "$DISK_N1" 1>/dev/null
 
-			(	echo 'n'                                ## Create a new partition
-				echo '1'                                ## Choose the partition number
-				echo "$START_SIZE"                      ## Choose the default start location (2048)
-				echo "+$(($ROOT_SIZE/1024/1024/1024))G" ## Make it as large as $ROOT_SIZE
-				echo 'bf00'                             ## Declare it to be a Solaris root partition
-				echo 'c'                                ## Change a partition's name
-				echo '1'                                ## The partition whose name to change
-				echo "$PART_NAME_ROOT"                  ## The name of the partition
+			(	echo 'n'               ## Create a new partition
+				echo '1'               ## Choose the partition number
+				echo "$START_SIZE"     ## Choose the default end location   (the end of the disk)
+				echo ''                ## Make it as large as $ROOT_SIZE
+				echo 'bf00'            ## Declare it to be a Solaris root partition
+				echo 'c'               ## Change a partition's name
+				echo '1'               ## The partition whose name to change
+				echo "$PART_NAME_ROOT" ## The name of the partition
 
 				echo 'w' ## Write the changes to disk
 				echo 'Y' ## Confirm
