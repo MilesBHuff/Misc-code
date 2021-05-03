@@ -54,8 +54,8 @@ declare -i   MEMSIZE=$(free -b | grep 'Mem:' | sed -r 's/^Mem:\s*([0-9]+).*$/\1/
 ## ---------------------------------------------------------------------
 declare -i SMALLEST_DISK_SIZE=0
 for DISK in ${DISKS[@]}; do
-	# declare -i SIZE=$(fdisk -l /dev/nvme1n1 | sed -r 's/^Disk .*? (\d+) bytes, [\s\S]*$/\1/')
-	declare -i SIZE=$(fdisk -l /dev/nvme1n1 | grep Disk | grep sectors | sed -r 's/^.*? ([0-9]+) bytes.*$/\1/' | xargs)
+	# declare -i SIZE=$(fdisk -l "$DISK" | sed -r 's/^Disk .*? (\d+) bytes, [\s\S]*$/\1/')
+	declare -i SIZE=$(fdisk -l "$DISK" | grep Disk | grep sectors | sed -r 's/^.*? ([0-9]+) bytes.*$/\1/' | xargs)
 	[[ $SMALLEST_DISK_SIZE -eq 0 || $SIZE -lt $SMALLEST_DISK_SIZE ]] && SMALLEST_DISK_SIZE=$SIZE
 done
 
