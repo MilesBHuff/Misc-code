@@ -144,10 +144,10 @@ MAKE_VFAT_OPTS=''
 	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -b  6"
 	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -f  1"
 	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -h  6"
+#	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -r 512"
 	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -R 12"
 	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -s  1"
 	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -S $PAGESIZE"
-#	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -r 512"
 MAKE_ZPOOL_OPTS=''
 	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -o ashift=12"        ## ashift=12 is 4096, appropriate for Advanced Format drives, which is basically everything these days.
 	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O acltype=posixacl" ## Required for `journald`
@@ -158,8 +158,24 @@ MAKE_ZPOOL_OPTS=''
 ## Mount options
 ## ---------------------------------------------------------------------
 MOUNTPOINT='/mnt'
-MOUNT_ANY_OPTS='defaults,rw,async,iversion,nodiratime,relatime,strictatime,lazytime,auto' #mand
-MOUNT_VFAT_OPTS='check=relaxed,errors=remount-ro,tz=UTC,rodir,sys_immutable,flush' #iocharset=utf8
+MOUNT_ANY_OPTS='default'
+	MOUNT_ANY_OPTS="$MOUNT_ANY_OPTS,auto"
+	MOUNT_ANY_OPTS="$MOUNT_ANY_OPTS,rw"
+	MOUNT_ANY_OPTS="$MOUNT_ANY_OPTS,async"
+	MOUNT_ANY_OPTS="$MOUNT_ANY_OPTS,iversion"
+	MOUNT_ANY_OPTS="$MOUNT_ANY_OPTS,nodiratime"
+	MOUNT_ANY_OPTS="$MOUNT_ANY_OPTS,relatime,"
+	MOUNT_ANY_OPTS="$MOUNT_ANY_OPTS,strictatime"
+	MOUNT_ANY_OPTS="$MOUNT_ANY_OPTS,lazytime"
+#	MOUNT_ANY_OPTS="$MOUNT_ANY_OPTS,mand"
+MOUNT_VFAT_OPTS=''
+	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,check=relaxed"
+	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,errors=remount-ro"
+#	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,iocharset=utf8"
+	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,tz=UTC"
+	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,rodir"
+	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,sys_immutable"
+	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,flush"
 MOUNT_ZFS_OPTS=''
 
 ## Names & labels
