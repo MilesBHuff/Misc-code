@@ -267,6 +267,7 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 		## ---------------------------------------------------------------------
 		else
 			sgdisk --zap-all "$DISK" 2>&1 >/dev/null
+			nvme format -fb 4096 "$DISK"
 
 			(	echo 'o' ## Create a new GPT partition table
 				echo 'Y' ## Confirm
