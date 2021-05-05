@@ -3,8 +3,6 @@
 
 ## Get system info and declare variables
 ## #####################################################################
-USE_NAMESPACES= ## Some NVMe drives have buggy firmware that does not allow you to delete namespaces.  If you are affected by such an issue, set this to `0`.
-[[ $USE_NAMESPACES ]] && echo 'If using NVMe disks, do not include the namespace!' >&2
 
 ## Get the disks
 ## =====================================================================
@@ -57,7 +55,12 @@ declare -i   MEM_SIZE=$(free -b | grep 'Mem:' | sed -r 's/^Mem:\s*([0-9]+).*$/\1
 declare -a DISK_TYPES
 declare -i I=0
 while [[ $I -lt $DISK_COUNT ]]; do
-	DISK_TYPES[$I]=$(cat /sys/block/$(echo "${DISKS[$I]}" | sed 's/\/dev\///')/queue/rotational)
+	DISKINFO=$(echo "${DISKS[$I]}" | sed 's/\/dev\///')/queue/rotational
+	if [[ -f "$DISKINFO" ]]; then
+		DISK_TYPES[$I]=$(cat "/sys/block/$DISKINFO")
+	else
+		DISK_TYPES[$I]=0
+	fi
 	[[ "${DISK_TYPES[$I]}" != "${DISK_TYPES[$(($I-1))]}" ]] && echo 'I refuse to make a RAID of SSDs and HDDs mixed together.' && exit 1
 	let '++I'
 done
@@ -67,17 +70,46 @@ unset DISK_TYPES
 
 ## Figure out which drives are NVME and which are SATA, so we can know whether to use namespaces
 ## ---------------------------------------------------------------------
-declare -a DISK_TYPES
-declare -i I=0
-while [[ $I -lt $DISK_COUNT ]]; do
-	DISK_TYPES[$I]=$(if [[ "${DISKS[$I]}" = *'nvme'* ]]; then echo '1'; else echo '0'; fi)
-	[[ "${DISK_TYPES[$I]}" != "${DISK_TYPES[$(($I-1))]}" ]] && echo 'I refuse to make a RAID of NVMe and SATA drives mixed together.' && exit 1
-	let '++I'
-done
-unset I
-[[ ${DISK_TYPES[0]} -eq 1 ]] && NVME=1 || NVME=
-unset DISK_TYPES
-[[ $NVME ]] && PART_LABEL='p' || PART_LABEL=''
+if [[ $SSD ]]; then
+	declare -a DISK_TYPES
+	declare -i I=0
+	while [[ $I -lt $DISK_COUNT ]]; do
+		DISK_TYPES[$I]=$(if [[ "${DISKS[$I]}" = *'nvme'* ]]; then echo '1'; else echo '0'; fi)
+		[[ "${DISK_TYPES[$I]}" != "${DISK_TYPES[$(($I-1))]}" ]] && echo 'I refuse to make a RAID of NVMe and SATA drives mixed together.' && exit 1
+		let '++I'
+	done
+	unset I
+	[[ ${DISK_TYPES[0]} -eq 1 ]] && NVME=1 || NVME=
+	unset DISK_TYPES
+	[[ $NVME ]] && PART_LABEL='p' || PART_LABEL=''
+fi
+
+## Many NVMe drives, unfortunately, do not support namespace management.
+## We need to check each drive, and if any do not support namespaces, we need to avoid their use.
+## ---------------------------------------------------------------------
+if [[ $NVME ]]; then
+	USE_NAMESPACES=1
+	for DISK in "${DISKS[@]}"; do
+		if [[ $(nvme id-ctrl "$DISK" -H | grep 'NS Management') == *'Not Supported'* ]]; then
+			USE_NAMESPACES=
+			break
+		fi
+	done
+	for DISK in "${DISKS[@]}"; do
+		NAMESPACE=$(echo "$DISK" | sed -r 's/^.+nvme[0-9]+(n[0-9]+)?.*$/\1/')
+		if [[ $USE_NAMESPACES  ]]; then
+			if [[ "$NAMESPACE" ]]; then
+				echo 'Please do not include the namespace when specifying an NVMe!' >&2
+				exit 1
+			fi
+		else
+			if [[ -z "$NAMESPACE" ]]; then
+				echo 'Please include the namespace when specifying an NVMe!' >&2
+				exit 1
+			fi
+		fi
+	done
+fi
 
 ## RAID1s have to be based on the size of the smallest disk in the array.
 ## ---------------------------------------------------------------------
