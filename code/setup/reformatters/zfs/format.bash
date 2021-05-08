@@ -200,9 +200,9 @@ MOUNT_VFAT_OPTS=''
 PART_NAME_ROOT='linux'
 PART_NAME_BOOT='esp'
 PART_NAME_SWAP='swap'
-POOL_NAME_ROOT='rpool'
-DATA_NAME_MAIN='main'
-DATA_NAME_STAT='static'
+ZPOOL='linux'
+ROOT_DATASET="$ZPOOL/root" ## Will be encrypted
+APPS_DATASET="$ROOT_DATASET/usr" ## Will be unencrypted
 
 ## Prepare system
 ## #####################################################################
@@ -211,7 +211,7 @@ DATA_NAME_STAT='static'
 ## =====================================================================
 function zap_zfs {
 	set +e
-	zpool destroy "$POOL_NAME_ROOT" 2>&1 >/dev/null
+	zpool destroy "$ZPOOL" 2>&1 >/dev/null
 	set -e
 }
 
@@ -374,13 +374,13 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 		let '++I'
 	done
 	unset I
-	zpool create "$POOL_NAME_ROOT" $MAKE_ZPOOL_OPTS -fm "$MOUNTPOINT" mirror "${POOL_PARTS[@]}"
+	zpool create "$ZPOOL" $MAKE_ZPOOL_OPTS -fm "$MOUNTPOINT" mirror "${POOL_PARTS[@]}"
 
 	## Create datasets
 	## ---------------------------------------------------------------------
 	echo 'Creating datasets...'
-	zfs create $ENCRYPT_ZFS_OPTS "$POOL_NAME_ROOT/$DATA_NAME_MAIN"
-	zfs create "$POOL_NAME_ROOT/$DATA_NAME_STAT"
+	zfs create $ENCRYPT_ZFS_OPTS "$ROOT_DATASET"
+	zfs create "$APPS_DATASET"
 fi
 
 ## Cleanup
