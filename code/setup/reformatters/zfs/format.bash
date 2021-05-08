@@ -81,7 +81,7 @@ if [[ $SSD ]]; then
 	unset I
 	[[ ${DISK_TYPES[0]} -eq 1 ]] && NVME=1 || NVME=
 	unset DISK_TYPES
-	[[ $NVME ]] && PART_LABEL='p' || PART_LABEL=''
+	[[ $NVME ]] && PART_LABEL='p' || PART_LABEL=
 fi
 
 ## Many NVMe drives, unfortunately, do not support namespace management.
@@ -109,6 +109,7 @@ if [[ $NVME ]]; then
 			fi
 		fi
 	done
+	unset NAMESPACE
 fi
 
 ## RAID1s have to be based on the size of the smallest disk in the array.
@@ -159,7 +160,7 @@ MAKE_ZPOOL_OPTS=''
 	## ACLs
 	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O acltype=posixacl"       ## Required for `journald`
 	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O aclinherit=passthrough" ## Doesn't affect POSIX ACLs, but can be needed for non-POSIX ones to work as intended.
-#	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O aclmode=passthrough"    ## Setting doesn't exist on ZFS for Linux.
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O aclmode=passthrough"    ## Setting is supposedly ignored by ZoL.
 	## xattrs
 	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O xattr=sa"       ## Helps performance, but makes xattrs Linux-specific.
 	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O dnodesize=auto" ## Helpful when using xattr=sa
@@ -169,9 +170,9 @@ MAKE_ZPOOL_OPTS=''
 	## Performance
 	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O relatime=on"     ## A classic Linuxy alternative to `atime`
 	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O logbias=latency" ## Correct setting for PCs.
-ENCRYPT_ZFS_OPTS=''
-	ENCRYPT_ZFS_OPTS="$ENCRYPT_ZFS_OPTS -o encryption=on"
-	ENCRYPT_ZFS_OPTS="$ENCRYPT_ZFS_OPTS -o keyformat=passphrase"
+	## Encryption
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O encryption=on"
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O keyformat=passphrase"
 
 ## Mount options
 ## ---------------------------------------------------------------------
@@ -186,14 +187,15 @@ MOUNT_ANY_OPTS='default'
 	MOUNT_ANY_OPTS="$MOUNT_ANY_OPTS,strictatime"
 	MOUNT_ANY_OPTS="$MOUNT_ANY_OPTS,lazytime"
 #	MOUNT_ANY_OPTS="$MOUNT_ANY_OPTS,mand"
-MOUNT_VFAT_OPTS=''
-	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,check=relaxed"
-	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,errors=remount-ro"
-#	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,iocharset=utf8"
-	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,tz=UTC"
-	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,rodir"
-	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,sys_immutable"
-	MOUNT_ANY_OPTS="$MOUNT_VFAT_OPTS,flush"
+MOUNT_VFAT_OPTS="$MOUNT_ANY_OPTS"
+	MOUNT_VFAT_OPTS="$MOUNT_VFAT_OPTS,check=relaxed"
+	MOUNT_VFAT_OPTS="$MOUNT_VFAT_OPTS,errors=remount-ro"
+#	MOUNT_VFAT_OPTS="$MOUNT_VFAT_OPTS,iocharset=utf8"
+	MOUNT_VFAT_OPTS="$MOUNT_VFAT_OPTS,tz=UTC"
+	MOUNT_VFAT_OPTS="$MOUNT_VFAT_OPTS,rodir"
+	MOUNT_VFAT_OPTS="$MOUNT_VFAT_OPTS,sys_immutable"
+	MOUNT_VFAT_OPTS="$MOUNT_VFAT_OPTS,flush"
+unset MOUNT_ANY_OPTS
 
 ## Names & labels
 ## ---------------------------------------------------------------------
@@ -201,8 +203,7 @@ PART_NAME_ROOT='linux'
 PART_NAME_BOOT='esp'
 PART_NAME_SWAP='swap'
 ZPOOL='linux'
-ROOT_DATASET="$ZPOOL/root" ## Will be encrypted
-APPS_DATASET="$ROOT_DATASET/usr" ## Will be unencrypted
+ZROOT="$ZPOOL"
 
 ## Prepare system
 ## #####################################################################
@@ -211,7 +212,7 @@ APPS_DATASET="$ROOT_DATASET/usr" ## Will be unencrypted
 ## =====================================================================
 function zap_zfs {
 	set +e
-	zpool destroy "$ZPOOL" 2>&1 >/dev/null
+	zpool destroy -f "$ZPOOL" 2>&1 >/dev/null
 	set -e
 }
 
@@ -374,16 +375,60 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 		let '++I'
 	done
 	unset I
-	zpool create "$ZPOOL" $MAKE_ZPOOL_OPTS -fm "$MOUNTPOINT" mirror "${POOL_PARTS[@]}"
+	zpool create "$ZPOOL" -f $MAKE_ZPOOL_OPTS -O 'canmount=noauto' -R "$MOUNTPOINT" -m '/' mirror "${POOL_PARTS[@]}"
 
 	## Create datasets
 	## ---------------------------------------------------------------------
 	echo 'Creating datasets...'
-	zfs create $ENCRYPT_ZFS_OPTS "$ROOT_DATASET"
-	zfs create "$APPS_DATASET"
+	zfs create -o 'mountpoint=/home'                    "$ZROOT/home"
+	zfs create -o 'mountpoint=/usr' -o 'encryption=off' "$ZROOT/usr"
 fi
 
-## Cleanup
+## Prepare for Linux
+## =====================================================================----
+
+## Prepare ZFS
+## -----------------------------------------------------------------
+read -p ':: Configure ZFS? (y/N) ' INPUT
+if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
+	echo 'Configuring ZFS...'
+	zfs umount -a
+	zpool set bootfs="$ZROOT" "$ZPOOL"
+	zpool export "$ZPOOL"
+	zpool import -R "$MOUNTPOINT" "$ZPOOL"
+	zfs load-key "$ZPOOL"
+	zfs mount "$ZROOT"
+	zfs mount -a
+fi
+
+## Do first mounts
+## -----------------------------------------------------------------
+read -p ':: Test mounts? (y/N) ' INPUT
+if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
+	echo 'Trialling mounts...'
+
+	[[ $USE_NAMESPACES ]] && NAMESPACE='n1'
+	mkdir -p "$MOUNTPOINT/boot"
+
+	set +e #FIXME: This section shouldn't be failing.
+	## Mount each boot partition at least once, and Keep the 0-index one mounted
+	declare -i I=$DISK_COUNT
+	while [[ $I -gt 0 ]]; do
+		mount -t vfat -o "$MOUNT_VFAT_OPTS" "${DISK}${NAMESPACE}${PART_LABEL}1" "$MOUNTPOINT/boot"
+		[[ ! $I -eq 0 ]] && umount "$MOUNTPOINT/boot"
+		let '--I'
+	done
+	unset I
+	set -e
+
+	## Activate all the swap partitions
+	for DISK in "${DISKS[@]}"; do
+		swapon "${DISK}${NAMESPACE}${PART_LABEL}3"
+	done
+
+fi
+
+## Wrap things up
 ## ---------------------------------------------------------------------
 echo ':: Done.'
 exit 0
