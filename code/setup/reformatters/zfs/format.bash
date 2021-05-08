@@ -169,6 +169,9 @@ MAKE_ZPOOL_OPTS=''
 	## Performance
 	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O relatime=on"     ## A classic Linuxy alternative to `atime`
 	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O logbias=latency" ## Correct setting for PCs.
+ENCRYPT_ZFS_OPTS=''
+	ENCRYPT_ZFS_OPTS="$ENCRYPT_ZFS_OPTS -o encryption=on"
+	ENCRYPT_ZFS_OPTS="$ENCRYPT_ZFS_OPTS -o keyformat=passphrase"
 
 ## Mount options
 ## ---------------------------------------------------------------------
@@ -376,7 +379,7 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 	## Create datasets
 	## ---------------------------------------------------------------------
 	echo 'Creating datasets...'
-	zfs create "$POOL_NAME_ROOT/$DATA_NAME_MAIN"
+	zfs create $ENCRYPT_ZFS_OPTS "$POOL_NAME_ROOT/$DATA_NAME_MAIN"
 	zfs create "$POOL_NAME_ROOT/$DATA_NAME_STAT"
 fi
 
