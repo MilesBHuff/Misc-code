@@ -199,9 +199,9 @@ unset MOUNT_ANY_OPTS
 
 ## Names & labels
 ## ---------------------------------------------------------------------
-PART_NAME_ROOT='linux'
-PART_NAME_BOOT='esp'
-PART_NAME_SWAP='swap'
+PART_NAME_ROOT='LINUX'
+PART_NAME_BOOT='ESP'
+PART_NAME_SWAP='SWAP'
 ZPOOL='linux'
 ZROOT="$ZPOOL"
 
@@ -301,7 +301,7 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 		## ---------------------------------------------------------------------
 		else
 			sgdisk --zap-all "$DISK" 2>&1 >/dev/null
-			nvme format -fb 4096 "$DISK"
+			nvme format -fb 4096 "$DISK" 2>&1 >/dev/null
 
 			(	echo 'o' ## Create a new GPT partition table
 				echo 'Y' ## Confirm
