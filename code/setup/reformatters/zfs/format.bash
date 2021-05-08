@@ -149,11 +149,26 @@ MAKE_VFAT_OPTS=''
 	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -s  1"
 	MAKE_VFAT_OPTS="$MAKE_VFAT_OPTS -S $PAGESIZE"
 MAKE_ZPOOL_OPTS=''
+	## Geometry
 	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -o ashift=12"        ## ashift=12 is 4096, appropriate for Advanced Format drives, which is basically everything these days.
-	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O acltype=posixacl" ## Required for `journald`
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O recordsize=1M"    ## The maximum size of a record.  The higher it is, the more-effective compression is;  and the less metadata is needed.
 	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O compression=zstd" ## Compression improves IO performance and increases available storage, at the cost of a small amount of CPU.  ZSTD is currently the best all-round compression algorithm.
-	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O relatime=on"      ## A classic Linuxy alternative to `atime`
-	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O xattr=sa"         ## Helps performance, but makes xattrs Linux-specific.
+	## Caching
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O primarycache=metadata" ## Saves memory.
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O secondarycache=all"    ## In conjunction with the above, helps with performance.
+	## ACLs
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O acltype=posixacl"       ## Required for `journald`
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O aclinherit=passthrough" ## Doesn't affect POSIX ACLs, but can be needed for non-POSIX ones to work as intended.
+#	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O aclmode=passthrough"    ## Setting doesn't exist on ZFS for Linux.
+	## xattrs
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O xattr=sa"       ## Helps performance, but makes xattrs Linux-specific.
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O dnodesize=auto" ## Helpful when using xattr=sa
+	## Metadata
+	[[ $DISK_COUNT -gt 1 ]] && MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O redundant_metadata=most" ## We can skimp out here a little bit if we're using a RAID array.
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O checksum=skein" ## Helps performance and security relative to the default, which is "fletcher4",
+	## Performance
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O relatime=on"     ## A classic Linuxy alternative to `atime`
+	MAKE_ZPOOL_OPTS="$MAKE_ZPOOL_OPTS -O logbias=latency" ## Correct setting for PCs.
 
 ## Mount options
 ## ---------------------------------------------------------------------
