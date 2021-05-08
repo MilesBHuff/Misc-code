@@ -121,7 +121,7 @@ for DISK in ${DISKS[@]}; do
 		# declare -i SIZE=$(fdisk -l "${DISKS[$I]}" | sed -r 's/^Disk .*? (\d+) bytes, [\s\S]*$/\1/') ## Would work if `sed` didn't suck.
 		declare -i SIZE=$(fdisk -l "${DISKS[$I]}" | grep Disk | grep sectors | sed -r 's/^.*? ([0-9]+) bytes.*$/\1/' | xargs)
 	fi
-	[[ $SSD && USE_NAMESPACES ]] && SIZE=$(rounded_integer_division $(($SIZE * 9)) 10) ## SSDs should be over-provisioned.
+	[[ $SSD && $USE_NAMESPACES ]] && SIZE=$(rounded_integer_division $(($SIZE * 9)) 10) ## SSDs should be over-provisioned.
 	[[ $SMALLEST_DISK_SIZE -eq 0 || $SIZE -lt $SMALLEST_DISK_SIZE ]] && SMALLEST_DISK_SIZE=$SIZE
 done
 
