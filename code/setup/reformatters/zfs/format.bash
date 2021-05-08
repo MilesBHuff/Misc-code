@@ -261,7 +261,7 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 				echo 'n'                          ## Create a new partition
 				echo ''                           ## Use the default partition number (1)
 				echo "$START_SIZE"                ## Choose the default start location (2048)
-				echo "+$(($ESP_SIZE/1024/1024))M" ## Make it as large as $ESP_SIZE
+				echo "+$(rounded_integer_division $ESP_SIZE $((1024 * 1024)))M" ## Make it as large as $ESP_SIZE
 				echo 'ef00'                       ## Declare it to be a UEFI partition
 				echo 'c'                          ## Change a partition's name
 				echo "$PART_NAME_BOOT"            ## The name of the partition
@@ -303,22 +303,22 @@ if [[ "$INPUT" = 'y' || "$INPUT" = 'Y' ]]; then
 			(	echo 'o' ## Create a new GPT partition table
 				echo 'Y' ## Confirm
 
-				echo 'n'                          ## Create a new partition
-				echo ''                           ## Use the default partition number (1)
-				echo "$START_SIZE"                ## Choose the default start location (2048)
-				echo "+$(($ESP_SIZE/1024/1024))M" ## Make it as large as $ESP_SIZE
-				echo 'ef00'                       ## Declare it to be a UEFI partition
-				echo 'c'                          ## Change a partition's name
-				echo "$PART_NAME_BOOT"            ## The name of the partition
+				echo 'n'               ## Create a new partition
+				echo ''                ## Use the default partition number (1)
+				echo "$START_SIZE"     ## Choose the default start location (2048)
+				echo "+$(rounded_integer_division $ESP_SIZE $((1024 * 1024)))M" ## Make it as large as $ESP_SIZE
+				echo 'ef00'            ## Declare it to be a UEFI partition
+				echo 'c'               ## Change a partition's name
+				echo "$PART_NAME_BOOT" ## The name of the partition
 
-				echo 'n'                                ## Create a new partition
-				echo '2'                                ## Choose the partition number
-				echo ''                                 ## Choose the default start location (where the last partition ended)
-				echo "+$(($ROOT_SIZE/1024/1024/1024))G" ## Make it as large as $ROOT_SIZE
-				echo 'bf00'                             ## Declare it to be a Solaris root partition
-				echo 'c'                                ## Change a partition's name
-				echo '2'                                ## The partition whose name to change
-				echo "$PART_NAME_ROOT"                  ## The name of the partition
+				echo 'n'               ## Create a new partition
+				echo '2'               ## Choose the partition number
+				echo ''                ## Choose the default start location (where the last partition ended)
+				echo "+$(rounded_integer_division $ROOT_SIZE $((1024 * 1024 * 1024)))G" ## Make it as large as $ROOT_SIZE
+				echo 'bf00'            ## Declare it to be a Solaris root partition
+				echo 'c'               ## Change a partition's name
+				echo '2'               ## The partition whose name to change
+				echo "$PART_NAME_ROOT" ## The name of the partition
 
 				echo 'n'               ## Create a new partition
 				echo '3'               ## Choose the partition number
